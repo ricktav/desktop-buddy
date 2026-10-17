@@ -254,3 +254,22 @@ test('a cheer alert plays the trick animation with confetti and bounces until di
   run(0.2);
   assert.equal(b.view().animation, 'happy');
 });
+
+test('clicking a cheering buddy ends the celebration and nothing lingers', () => {
+  const { world, b, run } = makeWorld();
+  world.alert({ message: 'Timer done!', target: 'here', duration: 0, cheer: true });
+  run(0.5);
+  assert.equal(b.view().cheering, true);
+  b.pet(1000);
+  run(0.2);
+  assert.equal(b.view().cheering, false);
+  assert.equal(b.view().effect, null);
+  assert.equal(b.bubble, null);
+  assert.ok(b.mood !== 'alert');
+  // Petting afterwards works normally again.
+  b.pet(2000);
+  run(0.1);
+  assert.equal(b.mood, 'happy');
+  run(3);
+  assert.equal(b.mood, 'wander');
+});

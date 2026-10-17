@@ -152,6 +152,11 @@ export class Buddy {
 
   pet(now: number): void {
     if (this.mood === 'drag' || this.mood === 'trick') return;
+    if (this.currentAlert) {
+      // A click on an alerting or cheering buddy acknowledges the alert.
+      this.dismissBubble();
+      return;
+    }
     if (this.mood === 'sleep') {
       // Waking a sleeping buddy by petting it.
       this.wasIdle = false;
@@ -217,6 +222,11 @@ export class Buddy {
         this.setMood('happy');
         this.timer = 1.5;
       }
+    }
+
+    // 1b. Self-heal: an alert must only live in the alert/guide/drag/fall moods.
+    if (this.currentAlert && !['alert', 'guide', 'drag', 'fall'].includes(this.mood)) {
+      this.finishAlert();
     }
 
     // 2. Start a queued alert when free.
