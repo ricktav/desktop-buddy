@@ -178,30 +178,36 @@ function lying({ eyes = 'open', neck = -50, ears = 'up', extra = '', tailLift = 
   );
 }
 
-/** Rearing on the hind legs; `point` extends a foreleg toward the target. */
+/**
+ * Rearing on the hind legs; `point` extends a foreleg toward the target.
+ * The hind legs stay on the ground (drawn unrotated, bent at the hock) while
+ * the body, forelegs and head pivot up around the hip. The whole figure is
+ * scaled a little so the raised head and horn stay inside the frame.
+ */
 function rearing({ eyes = 'open', extra = '', point = true, pawLift = 0 } = {}) {
   const by = 80;
-  const rot = `rotate(-30 48 ${FLOOR})`;
+  const hipX = 48, hipY = 86;
+  const raisedHoof = (x, y, angle) => `<g transform="translate(${x} ${y}) rotate(${angle}) scale(0.85)">${hoof(0, 4)}</g>`;
+  const foreleg = (d, back) =>
+    `<path d="${d}" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
+    `<path d="${d}" fill="none" stroke="url(#${back ? 'coatLegBack' : 'coatLeg'})" stroke-width="9" stroke-linecap="round"/>`;
+  const forelegs = point
+    ? foreleg(`M 78 ${by + 8} q 8 8 16 2`, true) + raisedHoof(95, by + 9, -40) +
+      foreleg(`M 84 ${by + 6} L 122 ${by + 2}`, false) + raisedHoof(125, by + 1, -85)
+    : foreleg(`M 78 ${by + 8} q 8 8 16 ${2 - pawLift * 0.5}`, true) + raisedHoof(95, by + 9 - pawLift * 0.5, -40) +
+      foreleg(`M 84 ${by + 6} q 14 2 24 ${-10 - pawLift}`, false) + raisedHoof(109, by - 5 - pawLift, -60);
   return svgWrap(
-    leg(44, by + 6, 2, FLOOR, { back: true, bend: -6 }) +
-    leg(54, by + 8, -2, FLOOR, { bend: -4 }) +
-    `<g transform="${rot}">` +
-    tail(34, by - 8, 0.6) +
+    `<g transform="translate(64 ${FLOOR}) scale(0.8) translate(-64 ${-FLOOR})">` +
+    // far hind leg on the ground behind the body, bent at the hock
+    leg(hipX - 4, hipY + 2, -8, FLOOR, { back: true, bend: 9 }) +
+    `<g transform="rotate(-34 ${hipX} ${hipY})">` +
+    tail(34, by - 6, 0.5) +
     body(62, by, 34, 19) +
-    // tucked far foreleg
-    `<path d="M 78 ${by + 8} q 6 8 14 2" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
-    `<path d="M 78 ${by + 8} q 6 8 14 2" fill="none" stroke="url(#coatLegBack)" stroke-width="9" stroke-linecap="round"/>` +
-    hoof(93, by + 14) +
-    (point
-      // pointing foreleg: straight forward in local space, which the rotation lifts up-right
-      ? `<path d="M 86 ${by + 4} L 122 ${by + 6}" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
-        `<path d="M 86 ${by + 4} L 122 ${by + 6}" fill="none" stroke="url(#coatLeg)" stroke-width="9" stroke-linecap="round"/>` +
-        `<g transform="translate(125 ${by + 5}) rotate(-90) scale(0.8)">${hoof(0, 4)}</g>`
-      // pawing foreleg, raised and bent
-      : `<path d="M 86 ${by + 4} q 14 ${-2 - pawLift} 18 ${-12 - pawLift}" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
-        `<path d="M 86 ${by + 4} q 14 ${-2 - pawLift} 18 ${-12 - pawLift}" fill="none" stroke="url(#coatLeg)" stroke-width="9" stroke-linecap="round"/>` +
-        hoof(105, by - 6 - pawLift)) +
-    headNeck(84, by - 10, -62, { eyes, ears: 'up', glow: true }) +
+    forelegs +
+    headNeck(84, by - 10, -48, { eyes, ears: 'up', glow: true }) +
+    `</g>` +
+    // near hind leg in front of the rump so the stance is readable
+    leg(hipX + 8, hipY + 4, -1, FLOOR, { bend: 9 }) +
     `</g>` +
     extra,
     { defs: DEFS },
