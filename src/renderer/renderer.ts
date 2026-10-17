@@ -94,6 +94,7 @@ function render(snapshot: WorldSnapshot): void {
     el.img.height = h;
     const artFacing = m.facing ?? 'right';
     el.img.classList.toggle('flip', b.facing !== artFacing);
+    el.img.classList.toggle('pixel', !!m.pixelArt);
     const lx = b.x - display.bounds.x - w / 2;
     const ly = b.y - display.bounds.y - h + feet;
     el.root.style.transform = `translate(${lx.toFixed(1)}px, ${ly.toFixed(1)}px)`;

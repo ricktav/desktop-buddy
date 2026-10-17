@@ -57,6 +57,8 @@ export interface BuddyManifest {
   facing?: 'left' | 'right';
   /** Y offset (px, pre-scale) between the frame bottom and the buddy's feet. */
   feetOffset?: number;
+  /** Render frames with nearest-neighbour scaling (for PNG pixel art). */
+  pixelArt?: boolean;
   animations: Partial<Record<AnimationName, AnimationDef>> & { idle: AnimationDef; walk: AnimationDef };
   /** Optional lines the buddy says when petted. */
   petLines?: string[];

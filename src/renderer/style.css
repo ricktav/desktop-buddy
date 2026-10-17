@@ -33,6 +33,7 @@ html, body {
   pointer-events: none;
 }
 .sprite.flip { transform: scaleX(-1); }
+.sprite.pixel { image-rendering: pixelated; }
 
 .bubble {
   position: absolute;
