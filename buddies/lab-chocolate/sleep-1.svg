@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<path d="M 34 108 Q 16 114 12 98" fill="none" stroke="#54321C" stroke-width="10" stroke-linecap="round"/><path d="M 34 108 Q 16 114 12 98" fill="none" stroke="#7A4A2B" stroke-width="7" stroke-linecap="round"/>
+<ellipse cx="70" cy="104" rx="40" ry="16" fill="#7A4A2B" stroke="#54321C" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="104" cy="116" rx="9" ry="4.5" fill="#7A4A2B" stroke="#54321C" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="118" cy="116" rx="9" ry="4.5" fill="#7A4A2B" stroke="#54321C" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 74 76 C 60 70 54 86 56 104 C 58 116 70 114 72 102 Z" fill="#7A4A2B" stroke="#54321C" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M 65 84 C 61 90 61 100 64 106" fill="none" stroke="#5E3620" stroke-width="3" stroke-linecap="round"/>
+<path d="M 110 76 C 124 70 130 86 128 104 C 126 116 114 114 112 102 Z" fill="#7A4A2B" stroke="#54321C" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M 119 84 C 123 90 123 100 120 106" fill="none" stroke="#5E3620" stroke-width="3" stroke-linecap="round"/>
+<circle cx="92" cy="90" r="30" fill="#7A4A2B" stroke="#54321C" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="92" cy="103" rx="15" ry="11" fill="#A6744F" stroke="#54321C" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="92" cy="96" rx="5.5" ry="4.2" fill="#2A1A12"/>
+<circle cx="90.2" cy="94.6" r="1.2" fill="#fff" opacity="0.8"/>
+<path d="M 85 105 q 7 7 14 0" fill="none" stroke="#2A1A12" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 92 100 v 6" fill="none" stroke="#2A1A12" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M 74 86 q 5 4 10 0" fill="none" stroke="#2A1A12" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 100 86 q 5 4 10 0" fill="none" stroke="#2A1A12" stroke-width="2.2" stroke-linecap="round"/>
+<circle cx="70" cy="98" r="3.5" fill="#F6A6A6" opacity="0.55"/>
+<circle cx="114" cy="98" r="3.5" fill="#F6A6A6" opacity="0.55"/>
+<text x="112" y="50" font-family="Arial Rounded MT Bold, Helvetica, Arial, sans-serif" font-weight="bold" font-size="13" fill="#5B8DEF" stroke="#fff" stroke-width="2" paint-order="stroke" text-anchor="middle">z</text>
+<text x="122" y="33" font-family="Arial Rounded MT Bold, Helvetica, Arial, sans-serif" font-weight="bold" font-size="18" fill="#5B8DEF" stroke="#fff" stroke-width="2" paint-order="stroke" text-anchor="middle">Z</text>
+</svg>

@@ -1,0 +1,181 @@
+# Desktop Buddy
+
+A chibi Labrador that lives along the bottom of your screens. It wanders,
+walks over to whatever window you are working in and watches it, sits down
+when you go idle, falls asleep if you stay away, and delivers alerts and
+on-screen guidance from your scripts, tools and timed reminders.
+
+Built with Electron + TypeScript for macOS. Three Labs ship in the box
+(yellow "Biscuit", chocolate "Mocha", black "Pepper"), and you can add your
+own buddies as folders of sprite frames.
+
+## Quick start
+
+```bash
+npm install
+npm start          # builds and launches; the buddy appears, a paw icon lands in the menu bar
+```
+
+First launch on macOS asks for two permissions. Both are needed so the
+buddy can see which window is in front:
+
+1. **Accessibility**: System Settings → Privacy & Security → Accessibility → enable *Electron* (or *Desktop Buddy* once packaged).
+2. **Automation → System Events**: macOS prompts for this the first time the buddy looks up the frontmost window.
+
+Without them the buddy still works; it just will not walk toward your active window.
+
+To build a `.app`/`.dmg`:
+
+```bash
+npm run dist       # output in release/
+```
+
+## What the buddy does
+
+| Situation | Behaviour |
+|---|---|
+| Nothing special | Wanders along the bottom of the screen (the top of the Dock), pauses, occasionally sits. Crosses onto other monitors. |
+| You switch windows | Walks slowly to stand beneath the new window and looks up at it for a while. |
+| Idle 90 s (configurable) | Sits down. |
+| Idle 5 min (configurable) | Lies down and sleeps. Any mouse or keyboard activity wakes it. |
+| Alert arrives | Runs to the active window (or wherever you asked), perks its ears and shows a speech bubble. |
+| Guide arrives | Runs to the spot, floats up, points at it with a pulsing marker and a bubble, then hops back down. |
+| Reminder fires | Same as an alert, with the message you configured. |
+| You click it | Happy wiggle. Click a bubble to dismiss it. |
+| You drag it | Dangles from the cursor; drops back to the floor of whichever screen you release it on. |
+| Right-click / menu bar paw | Menu: pet, dismiss, add or remove buddies, test alert, open config, quit. |
+
+The overlay windows are click-through everywhere except on the buddy itself,
+so it never gets in the way of what is underneath.
+
+## Sending alerts and guidance
+
+The app runs a local HTTP API on `127.0.0.1:47821` (configurable). Use the
+bundled CLI or plain HTTP from any script, build tool, cron job or AI agent.
+
+```bash
+# CLI (node bin/buddy.js, or `npm link` to get a global `buddy` command)
+buddy alert "Build failed" --level error          # runs to your active window
+buddy alert "Deploy done" --target here            # speaks where it stands
+buddy alert "Look at this" --target mouse          # points at the cursor
+buddy guide 640 320 "Click the Save button"        # walks to a screen point and points at it
+buddy say "Stand-up in 5 minutes" --duration 0     # sticky bubble until clicked
+buddy state                                        # positions, moods, active window, idle time
+buddy buddies                                      # active buddies and installable packs
+buddy add lab-black                                # add a second buddy
+buddy remove lab-black-2
+buddy reload                                       # re-read config.json
+```
+
+```bash
+# Raw HTTP
+curl -X POST localhost:47821/alert -H 'content-type: application/json' \
+     -d '{"message":"Tests passed","level":"info","target":"active","duration":10}'
+curl -X POST localhost:47821/guide -d '{"message":"Here","x":640,"y":320}'
+```
+
+| Route | Body | Notes |
+|---|---|---|
+| `POST /alert` | `message`, `level` (`info`/`warn`/`error`), `target` (`active`/`here`/`mouse`/`{x,y}`), `duration` seconds (0 = sticky), `buddy` name or id | Default target is the active window |
+| `POST /say` | `message`, `duration`, `buddy` | Bubble without moving |
+| `POST /guide` | `message`, `x`, `y`, `duration`, `buddy` | Global screen coordinates (points, origin top-left of the main display) |
+| `GET /state` | | Full snapshot |
+| `GET /buddies` | | Active and available packs |
+| `POST /buddies` | `pack` | Add a buddy from a pack name or absolute folder path |
+| `DELETE /buddies/:id` | | Remove a buddy |
+| `POST /reload` | | Reload config |
+
+Set `api.token` in the config to require an `x-buddy-token` header (the CLI
+reads `BUDDY_TOKEN`). The server only listens on localhost.
+
+## Configuration
+
+`~/Library/Application Support/desktop-buddy/config.json` (open it from the
+menu bar: *Open config file*; apply with *Reload config* or `buddy reload`).
+
+```jsonc
+{
+  "buddies": [
+    { "pack": "lab-yellow", "enabled": true },
+    { "pack": "lab-black", "name": "Pepper", "scale": 0.8 }
+  ],
+  "idleSitAfter": 90,          // seconds idle before sitting
+  "idleSleepAfter": 300,       // seconds idle before sleeping
+  "walkSpeed": 60,             // points per second
+  "activeWindowPoll": 1.5,     // seconds between frontmost-window checks
+  "bubbleSeconds": 12,         // default bubble lifetime
+  "api": { "enabled": true, "port": 47821, "token": "" },
+  "reminders": [
+    { "message": "Time to stretch!", "every": "45m", "target": "here" },
+    { "message": "Stand-up", "at": "09:55", "days": [1, 2, 3, 4, 5], "level": "warn" }
+  ]
+}
+```
+
+Reminders accept `every` (`90s`, `45m`, `2h`) or `at` (`HH:MM`, optional
+`days` with 0 = Sunday), plus the same `level` and `target` fields as alerts.
+
+## Adding your own buddy
+
+A buddy is a folder containing `buddy.json` and its frame images (SVG or
+PNG). Put it in `~/Library/Application Support/desktop-buddy/buddies/`,
+use *Install buddy folder…* from the menu, or `buddy add /path/to/folder`.
+
+```
+my-cat/
+  buddy.json
+  idle-0.svg  idle-1.svg
+  walk-0.png  walk-1.png  walk-2.png  walk-3.png
+  sit-0.png   sleep-0.png ...
+```
+
+```json
+{
+  "name": "Mittens",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "scale": 1,
+  "facing": "right",
+  "feetOffset": 6,
+  "petLines": ["Mrrp", "*purrs*"],
+  "animations": {
+    "idle":  { "frames": ["idle-0.svg", "idle-1.svg"], "fps": 2 },
+    "walk":  { "frames": ["walk-0.png", "walk-1.png", "walk-2.png", "walk-3.png"], "fps": 8 },
+    "sit":   { "frames": ["sit-0.png"], "fps": 1 },
+    "sleep": { "frames": ["sleep-0.png", "sleep-1.png"], "fps": 1 },
+    "watch": { "frames": ["watch-0.png"], "fps": 1 },
+    "point": { "frames": ["point-0.png"], "fps": 1 },
+    "alert": { "frames": ["alert-0.png", "alert-1.png"], "fps": 4 },
+    "happy": { "frames": ["happy-0.png"], "fps": 4 },
+    "drag":  { "frames": ["drag-0.png"], "fps": 1 }
+  }
+}
+```
+
+Only `idle` and `walk` are required; any missing animation falls back to
+`idle`. Artwork should face the direction given by `facing`; the app mirrors
+it for the other direction. `feetOffset` is the gap in pixels between the
+bottom of the frame and the character's feet.
+
+The bundled Labradors are generated from `scripts/gen-lab-sprites.mjs`.
+Edit the colours or poses there and run `npm run sprites` to regenerate, or
+add a new coat to the `COATS` table to get a new buddy.
+
+## Development
+
+```bash
+npm run dev        # launches with DevTools attached to each overlay
+npm test           # simulation, reminder and API/CLI tests (no display needed)
+npm run typecheck
+electron . --capture=/tmp/caps   # logs a DOM probe of each overlay every 3 s and saves screenshots
+```
+
+Layout:
+
+- `src/sim/` pure simulation (state machine for wander / approach / watch / sit / sleep / alert / guide / drag). No Electron imports so it is unit-testable.
+- `src/main/` Electron main process: overlay windows per display, active-window tracking (`osascript` + System Events on macOS), idle detection, tray menu, local API, reminders, buddy pack loader.
+- `src/renderer/` draws the buddies from snapshots sent at 30 fps, handles hover/click/drag and click-through toggling.
+- `buddies/` bundled packs. `bin/buddy.js` CLI.
+
+Other platforms: everything except active-window tracking is cross-platform.
+Add a provider in `src/main/activeWindow.ts` for Windows or Linux.

@@ -1,0 +1,44 @@
+{
+  "name": "desktop-buddy",
+  "version": "0.1.0",
+  "description": "A chibi Labrador desktop buddy that walks along the bottom of your screens, watches your active window, naps when you're idle, and delivers alerts and guidance.",
+  "main": "dist/main/main.js",
+  "private": true,
+  "license": "MIT",
+  "bin": {
+    "buddy": "bin/buddy.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && node scripts/copy-static.mjs",
+    "sprites": "node scripts/gen-lab-sprites.mjs",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --dev",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "dist": "npm run build && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^44.8.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "dev.buddy.desktop",
+    "productName": "Desktop Buddy",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": ["dmg", "zip"],
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSAppleEventsUsageDescription": "Desktop Buddy reads the frontmost window position so your buddy can walk over and watch it."
+      }
+    },
+    "files": [
+      "dist/**/*",
+      "buddies/**/*",
+      "bin/**/*",
+      "package.json"
+    ]
+  }
+}

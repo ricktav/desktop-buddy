@@ -1,0 +1,109 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { AlertRequest } from '../shared/types';
+
+export interface ApiHandlers {
+  alert(req: AlertRequest): { ok: true; buddy: string } | { ok: false; error: string };
+  state(): unknown;
+  listBuddies(): unknown;
+  addBuddy(ref: string): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
+  removeBuddy(id: string): { ok: boolean };
+  reload(): Promise<void>;
+}
+
+/**
+ * Tiny localhost HTTP API so scripts and tools can talk to the buddy:
+ *   POST /alert   {message, level?, target?, duration?, buddy?}
+ *   POST /guide   {message, x, y, ...}   (sugar for target: {x, y})
+ *   GET  /state
+ *   GET  /buddies
+ *   POST /buddies {pack}
+ *   DELETE /buddies/:id
+ *   POST /reload
+ */
+export function startApi(port: number, token: string | undefined, h: ApiHandlers): Server {
+  const server = createServer(async (req, res) => {
+    try {
+      await handle(req, res, token, h);
+    } catch (err) {
+      send(res, 500, { ok: false, error: (err as Error).message });
+    }
+  });
+  server.on('error', (err) => console.error('API server error:', err.message));
+  server.listen(port, '127.0.0.1', () => console.log(`buddy API listening on http://127.0.0.1:${port}`));
+  return server;
+}
+
+async function handle(req: IncomingMessage, res: ServerResponse, token: string | undefined, h: ApiHandlers): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+  if (token && req.headers['x-buddy-token'] !== token && url.searchParams.get('token') !== token) {
+    return send(res, 401, { ok: false, error: 'missing or wrong x-buddy-token' });
+  }
+  const method = req.method ?? 'GET';
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+
+  if (method === 'GET' && (path === '/' || path === '/state')) return send(res, 200, { ok: true, ...(h.state() as object) });
+  if (method === 'GET' && path === '/buddies') return send(res, 200, { ok: true, buddies: h.listBuddies() });
+  if (method === 'POST' && path === '/reload') {
+    await h.reload();
+    return send(res, 200, { ok: true });
+  }
+  if (method === 'POST' && (path === '/alert' || path === '/say' || path === '/guide')) {
+    const body = await readJson(req);
+    const message = typeof body.message === 'string' ? body.message : typeof body.text === 'string' ? body.text : '';
+    if (!message) return send(res, 400, { ok: false, error: '"message" is required' });
+    const alert: AlertRequest = {
+      message,
+      level: body.level === 'warn' || body.level === 'error' ? body.level : 'info',
+      duration: typeof body.duration === 'number' ? body.duration : undefined,
+      buddy: typeof body.buddy === 'string' ? body.buddy : undefined,
+    };
+    if (path === '/guide' || (typeof body.x === 'number' && typeof body.y === 'number')) {
+      if (typeof body.x !== 'number' || typeof body.y !== 'number') return send(res, 400, { ok: false, error: '"x" and "y" are required' });
+      alert.target = { x: body.x, y: body.y };
+    } else if (path === '/say') {
+      alert.target = 'here';
+    } else if (body.target === 'active' || body.target === 'here' || body.target === 'mouse') {
+      alert.target = body.target;
+    } else if (body.target && typeof body.target === 'object') {
+      const t = body.target as { x?: unknown; y?: unknown };
+      if (typeof t.x === 'number' && typeof t.y === 'number') alert.target = { x: t.x, y: t.y };
+    }
+    const result = h.alert(alert);
+    return send(res, result.ok ? 200 : 404, result);
+  }
+  if (method === 'POST' && path === '/buddies') {
+    const body = await readJson(req);
+    if (typeof body.pack !== 'string') return send(res, 400, { ok: false, error: '"pack" is required' });
+    const result = await h.addBuddy(body.pack);
+    return send(res, result.ok ? 200 : 400, result);
+  }
+  const del = path.match(/^\/buddies\/([^/]+)$/);
+  if (method === 'DELETE' && del) return send(res, 200, h.removeBuddy(decodeURIComponent(del[1])));
+  send(res, 404, { ok: false, error: `no route ${method} ${path}` });
+}
+
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk: string) => {
+      data += chunk;
+      if (data.length > 64 * 1024) reject(new Error('body too large'));
+    });
+    req.on('end', () => {
+      if (!data.trim()) return resolve({});
+      try {
+        resolve(JSON.parse(data) as Record<string, unknown>);
+      } catch {
+        reject(new Error('invalid JSON body'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function send(res: ServerResponse, status: number, body: unknown): void {
+  const json = JSON.stringify(body);
+  res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) });
+  res.end(json);
+}

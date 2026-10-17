@@ -1,0 +1,88 @@
+{
+  "name": "Pepper",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "scale": 1,
+  "facing": "right",
+  "feetOffset": 6,
+  "petLines": [
+    "Woof!",
+    "*happy tail wiggles*",
+    "*leans in*",
+    "Hi!",
+    "*boop*"
+  ],
+  "animations": {
+    "idle": {
+      "frames": [
+        "idle-0.svg",
+        "idle-1.svg",
+        "idle-2.svg",
+        "idle-3.svg"
+      ],
+      "fps": 2
+    },
+    "walk": {
+      "frames": [
+        "walk-0.svg",
+        "walk-1.svg",
+        "walk-2.svg",
+        "walk-3.svg"
+      ],
+      "fps": 8
+    },
+    "sit": {
+      "frames": [
+        "sit-0.svg",
+        "sit-1.svg",
+        "sit-2.svg",
+        "sit-3.svg"
+      ],
+      "fps": 1.5
+    },
+    "sleep": {
+      "frames": [
+        "sleep-0.svg",
+        "sleep-1.svg"
+      ],
+      "fps": 1
+    },
+    "watch": {
+      "frames": [
+        "watch-0.svg",
+        "watch-1.svg",
+        "watch-2.svg",
+        "watch-3.svg"
+      ],
+      "fps": 1.5
+    },
+    "point": {
+      "frames": [
+        "point-0.svg",
+        "point-1.svg"
+      ],
+      "fps": 2
+    },
+    "alert": {
+      "frames": [
+        "alert-0.svg",
+        "alert-1.svg"
+      ],
+      "fps": 4
+    },
+    "happy": {
+      "frames": [
+        "happy-0.svg",
+        "happy-1.svg"
+      ],
+      "fps": 5
+    },
+    "drag": {
+      "frames": [
+        "drag-0.svg",
+        "drag-1.svg"
+      ],
+      "fps": 2
+    }
+  }
+}

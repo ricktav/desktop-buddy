@@ -1,0 +1,527 @@
+import type {
+  ActiveWindowInfo,
+  AlertRequest,
+  AnimationName,
+  BubbleState,
+  BuddyManifest,
+  BuddyMood,
+  BuddyView,
+  DisplayInfo,
+  Rect,
+} from '../shared/types';
+
+export interface SimConfig {
+  idleSitAfter: number;
+  idleSleepAfter: number;
+  walkSpeed: number;
+  bubbleSeconds: number;
+}
+
+export interface Rng {
+  (): number;
+}
+
+export interface PendingAlert {
+  message: string;
+  level: 'info' | 'warn' | 'error';
+  /** Resolved global target. */
+  target: { kind: 'floor'; x: number; displayId: number } | { kind: 'point'; x: number; y: number; displayId: number } | { kind: 'here' };
+  durationMs: number | null;
+}
+
+const EDGE_MARGIN = 40;
+const RISE_SPEED = 260; // DIP/s when floating up to a guide point
+const FALL_SPEED = 700;
+const HOVER_ABOVE_POINT = 28; // feet sit this far below the pointed-at target
+
+export function floorOf(display: DisplayInfo): number {
+  return display.workArea.y + display.workArea.height;
+}
+
+export function displayContaining(displays: DisplayInfo[], x: number, y: number): DisplayInfo | null {
+  for (const d of displays) {
+    const b = d.bounds;
+    if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) return d;
+  }
+  return null;
+}
+
+export function displayById(displays: DisplayInfo[], id: number): DisplayInfo | null {
+  return displays.find((d) => d.id === id) ?? null;
+}
+
+/** The display whose horizontal range contains `x`, preferring `preferId`. */
+function displayAtX(displays: DisplayInfo[], x: number, preferId: number): DisplayInfo | null {
+  const prefer = displayById(displays, preferId);
+  if (prefer && x >= prefer.bounds.x && x < prefer.bounds.x + prefer.bounds.width) return prefer;
+  for (const d of displays) {
+    if (x >= d.bounds.x && x < d.bounds.x + d.bounds.width) return d;
+  }
+  return null;
+}
+
+function clampToDisplay(display: DisplayInfo, x: number): number {
+  const wa = display.workArea;
+  return Math.min(wa.x + wa.width - EDGE_MARGIN, Math.max(wa.x + EDGE_MARGIN, x));
+}
+
+function rectCentre(r: Rect): { x: number; y: number } {
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+}
+
+export class Buddy {
+  readonly id: string;
+  name: string;
+  readonly pack: string;
+  readonly manifest: BuddyManifest;
+  scale: number;
+
+  x = 0;
+  y = 0;
+  displayId = 0;
+  facing: 'left' | 'right' = 'right';
+  mood: BuddyMood = 'wander';
+  animation: AnimationName = 'idle';
+  bubble: BubbleState | null = null;
+  pointer: { x: number; y: number } | null = null;
+
+  private animTime = 0;
+  private targetX: number | null = null;
+  private targetY: number | null = null;
+  private speedScale = 1;
+  /** Seconds remaining in the current pause / watch / happy phase. */
+  private timer = 0;
+  private watchedKey: string | null = null;
+  private pendingAlerts: PendingAlert[] = [];
+  private currentAlert: PendingAlert | null = null;
+  private alertPhase: 'travel' | 'rise' | 'show' | 'fall' | null = null;
+  private wasIdle = false;
+  private dragOffset = { x: 0, y: 0 };
+
+  constructor(
+    id: string,
+    pack: string,
+    manifest: BuddyManifest,
+    private readonly cfg: SimConfig,
+    private readonly rng: Rng = Math.random,
+    opts: { name?: string; scale?: number } = {},
+  ) {
+    this.id = id;
+    this.pack = pack;
+    this.manifest = manifest;
+    this.name = opts.name ?? manifest.name;
+    this.scale = opts.scale ?? manifest.scale ?? 1;
+  }
+
+  /** Place the buddy on the floor of a display. */
+  placeOn(display: DisplayInfo, x?: number): void {
+    this.displayId = display.id;
+    this.x = clampToDisplay(display, x ?? display.workArea.x + display.workArea.width * (0.2 + 0.6 * this.rng()));
+    this.y = floorOf(display);
+    this.targetX = null;
+    this.targetY = null;
+  }
+
+  queueAlert(alert: PendingAlert): void {
+    this.pendingAlerts.push(alert);
+  }
+
+  get hasAlert(): boolean {
+    return this.currentAlert !== null || this.pendingAlerts.length > 0;
+  }
+
+  dismissBubble(): void {
+    if (this.bubble) this.bubble.until = 0;
+  }
+
+  pet(now: number): void {
+    if (this.mood === 'drag') return;
+    if (this.mood === 'sleep') {
+      // Waking a sleeping buddy by petting it.
+      this.wasIdle = false;
+    }
+    this.setMood('happy');
+    this.timer = 2.2;
+    const lines = this.manifest.petLines ?? [];
+    if (lines.length && this.rng() < 0.7 && !this.bubble) {
+      this.bubble = { text: lines[Math.floor(this.rng() * lines.length)], level: 'info', until: now + 2500 };
+    }
+  }
+
+  startDrag(px: number, py: number): void {
+    this.dragOffset = { x: this.x - px, y: this.y - py };
+    this.setMood('drag');
+    this.targetX = null;
+    this.targetY = null;
+  }
+
+  drag(px: number, py: number, displays: DisplayInfo[]): void {
+    if (this.mood !== 'drag') return;
+    this.x = px + this.dragOffset.x;
+    this.y = py + this.dragOffset.y;
+    const d = displayContaining(displays, px, py);
+    if (d) this.displayId = d.id;
+  }
+
+  endDrag(displays: DisplayInfo[]): void {
+    if (this.mood !== 'drag') return;
+    const d = displayById(displays, this.displayId) ?? displays[0];
+    if (d) this.x = clampToDisplay(d, this.x);
+    this.setMood('fall');
+  }
+
+  /** Re-anchor after displays changed. */
+  onDisplaysChanged(displays: DisplayInfo[]): void {
+    const d = displayById(displays, this.displayId) ?? displays[0];
+    if (!d) return;
+    if (this.mood !== 'drag' && this.mood !== 'guide' && this.alertPhase !== 'rise' && this.alertPhase !== 'show') {
+      this.placeOn(d, this.x);
+    }
+  }
+
+  tick(dt: number, now: number, displays: DisplayInfo[], active: ActiveWindowInfo | null, idleSeconds: number): void {
+    const display = displayById(displays, this.displayId) ?? displays[0];
+    if (!display) return;
+    if (this.bubble && this.bubble.until !== null && now >= this.bubble.until) {
+      this.bubble = null;
+    }
+
+    // 1. Idle handling: sit, then sleep. Any activity wakes the buddy.
+    const idle = idleSeconds >= this.cfg.idleSitAfter;
+    if (!this.hasAlert && this.mood !== 'drag' && this.mood !== 'fall' && this.mood !== 'guide') {
+      if (idle) {
+        if (idleSeconds >= this.cfg.idleSleepAfter && this.mood !== 'sleep') this.setMood('sleep');
+        else if (idleSeconds < this.cfg.idleSleepAfter && this.mood !== 'sit' && this.mood !== 'sleep') {
+          this.setMood('sit');
+        }
+        this.wasIdle = true;
+      } else if (this.wasIdle) {
+        this.wasIdle = false;
+        this.setMood('happy');
+        this.timer = 1.5;
+      }
+    }
+
+    // 2. Start a queued alert when free.
+    if (!this.currentAlert && this.pendingAlerts.length && this.mood !== 'drag' && this.mood !== 'fall') {
+      this.beginAlert(this.pendingAlerts.shift()!, displays, now);
+    }
+
+    // 3. Watch the active window.
+    if (!this.hasAlert && active && (this.mood === 'wander' || this.mood === 'watch' || this.mood === 'approach')) {
+      this.considerActiveWindow(active, displays);
+    }
+
+    switch (this.mood) {
+      case 'wander':
+        this.tickWander(dt, display, displays);
+        break;
+      case 'approach':
+        this.tickWalk(dt, displays, 0.6);
+        if (this.targetX === null) {
+          this.setMood('watch');
+          this.timer = 20 + this.rng() * 40;
+          if (active?.bounds) this.faceToward(rectCentre(active.bounds).x);
+        }
+        break;
+      case 'watch':
+        this.timer -= dt;
+        if (this.timer <= 0) this.setMood('wander');
+        break;
+      case 'sit':
+      case 'sleep':
+        break;
+      case 'happy':
+        this.timer -= dt;
+        if (this.timer <= 0) this.setMood('wander');
+        break;
+      case 'drag':
+        break;
+      case 'fall': {
+        const floor = floorOf(display);
+        this.y = Math.min(floor, this.y + FALL_SPEED * dt);
+        if (this.y >= floor) {
+          this.y = floor;
+          if (this.currentAlert) {
+            this.finishAlert();
+          } else {
+            this.setMood('happy');
+            this.timer = 1;
+          }
+        }
+        break;
+      }
+      case 'alert':
+      case 'guide':
+        this.tickAlert(dt, now, displays);
+        break;
+    }
+
+    this.animTime += dt;
+  }
+
+  // ---- behaviours ------------------------------------------------------
+
+  private tickWander(dt: number, display: DisplayInfo, displays: DisplayInfo[]): void {
+    if (this.targetX !== null) {
+      this.tickWalk(dt, displays, this.speedScale);
+      if (this.targetX === null) this.timer = 2 + this.rng() * 8;
+      return;
+    }
+    this.animation = 'idle';
+    this.timer -= dt;
+    if (this.timer > 0) return;
+    // Pick somewhere new to go. Occasionally wander onto a neighbouring display.
+    let dest = display;
+    if (displays.length > 1 && this.rng() < 0.25) {
+      const others = displays.filter((d) => d.id !== display.id);
+      dest = others[Math.floor(this.rng() * others.length)];
+    }
+    const wa = dest.workArea;
+    this.targetX = clampToDisplay(dest, wa.x + this.rng() * wa.width);
+    this.speedScale = 0.6 + this.rng() * 0.5;
+    if (this.rng() < 0.15) {
+      // Sit for a moment instead.
+      this.targetX = null;
+      this.animation = 'sit';
+      this.timer = 6 + this.rng() * 10;
+    }
+  }
+
+  /** Walk toward targetX along the floor, switching displays when crossing. */
+  private tickWalk(dt: number, displays: DisplayInfo[], speedScale: number): void {
+    if (this.targetX === null) return;
+    const speed = this.cfg.walkSpeed * speedScale;
+    const dx = this.targetX - this.x;
+    const step = Math.min(Math.abs(dx), speed * dt);
+    if (Math.abs(dx) < 1) {
+      this.x = this.targetX;
+      this.targetX = null;
+      this.animation = 'idle';
+      return;
+    }
+    this.facing = dx > 0 ? 'right' : 'left';
+    this.animation = 'walk';
+    const nx = this.x + Math.sign(dx) * step;
+    const next = displayAtX(displays, nx, this.displayId);
+    if (next) {
+      if (next.id !== this.displayId) {
+        this.displayId = next.id;
+      }
+      this.x = nx;
+      this.y = floorOf(next);
+    } else {
+      // Nothing to walk onto: stop at the edge.
+      const d = displayById(displays, this.displayId)!;
+      this.x = clampToDisplay(d, nx);
+      this.targetX = null;
+      this.animation = 'idle';
+    }
+  }
+
+  private considerActiveWindow(active: ActiveWindowInfo, displays: DisplayInfo[]): void {
+    if (!active.bounds) return;
+    const key = `${active.app}|${active.title}|${Math.round(active.bounds.x / 50)}|${Math.round(active.bounds.width / 50)}`;
+    if (key === this.watchedKey) return;
+    this.watchedKey = key;
+    const c = rectCentre(active.bounds);
+    const d = displayContaining(displays, c.x, c.y) ?? displayAtX(displays, c.x, this.displayId);
+    if (!d) return;
+    this.targetX = clampToDisplay(d, c.x);
+    this.setMood('approach');
+  }
+
+  private beginAlert(alert: PendingAlert, displays: DisplayInfo[], now: number): void {
+    this.currentAlert = alert;
+    this.wasIdle = false;
+    this.bubble = null;
+    if (alert.target.kind === 'here') {
+      this.alertPhase = 'show';
+      this.setMood('alert');
+      this.showBubble(alert, now);
+      return;
+    }
+    const d = displayById(displays, alert.target.displayId) ?? displays[0];
+    this.targetX = clampToDisplay(d, alert.target.x);
+    this.targetY = alert.target.kind === 'point' ? alert.target.y + HOVER_ABOVE_POINT : null;
+    this.alertPhase = 'travel';
+    this.setMood(alert.target.kind === 'point' ? 'guide' : 'alert');
+    // Make sure we are standing on the floor before travelling.
+    if (this.y !== floorOf(d) && this.displayId === d.id) this.y = floorOf(d);
+  }
+
+  private tickAlert(dt: number, now: number, displays: DisplayInfo[]): void {
+    const alert = this.currentAlert;
+    if (!alert) {
+      this.setMood('wander');
+      return;
+    }
+    switch (this.alertPhase) {
+      case 'travel':
+        this.tickWalk(dt, displays, 1.4);
+        if (this.targetX === null) {
+          if (this.targetY !== null) {
+            this.alertPhase = 'rise';
+          } else {
+            this.alertPhase = 'show';
+            this.showBubble(alert, now);
+          }
+        }
+        break;
+      case 'rise': {
+        const ty = this.targetY ?? this.y;
+        this.animation = 'point';
+        if (alert.target.kind === 'point') {
+          this.pointer = { x: alert.target.x, y: alert.target.y };
+          this.faceToward(alert.target.x);
+        }
+        if (this.y > ty) this.y = Math.max(ty, this.y - RISE_SPEED * dt);
+        if (this.y <= ty + 0.5) {
+          this.y = ty;
+          this.alertPhase = 'show';
+          this.showBubble(alert, now);
+        }
+        break;
+      }
+      case 'show':
+        this.animation = this.mood === 'guide' ? 'point' : 'alert';
+        if (!this.bubble) {
+          // Bubble expired or dismissed.
+          if (this.mood === 'guide') {
+            this.pointer = null;
+            this.alertPhase = 'fall';
+            this.setMood('fall');
+          } else {
+            this.finishAlert();
+          }
+        }
+        break;
+      case 'fall':
+        // Handled by the 'fall' mood.
+        break;
+    }
+  }
+
+  private showBubble(alert: PendingAlert, now: number): void {
+    this.bubble = {
+      text: alert.message,
+      level: alert.level,
+      until: alert.durationMs === null ? null : now + alert.durationMs,
+    };
+  }
+
+  private finishAlert(): void {
+    this.currentAlert = null;
+    this.alertPhase = null;
+    this.pointer = null;
+    this.targetY = null;
+    this.setMood('watch');
+    this.timer = 4;
+  }
+
+  private faceToward(x: number): void {
+    if (Math.abs(x - this.x) > 10) this.facing = x > this.x ? 'right' : 'left';
+  }
+
+  private setMood(mood: BuddyMood): void {
+    if (this.mood === mood) return;
+    this.mood = mood;
+    this.animTime = 0;
+    switch (mood) {
+      case 'wander':
+        this.animation = 'idle';
+        this.timer = 1 + this.rng() * 3;
+        this.targetX = null;
+        break;
+      case 'approach':
+        this.animation = 'walk';
+        break;
+      case 'watch':
+        this.animation = 'watch';
+        break;
+      case 'sit':
+        this.animation = 'sit';
+        this.targetX = null;
+        break;
+      case 'sleep':
+        this.animation = 'sleep';
+        this.targetX = null;
+        break;
+      case 'happy':
+        this.animation = 'happy';
+        break;
+      case 'drag':
+        this.animation = 'drag';
+        break;
+      case 'fall':
+        this.animation = 'drag';
+        break;
+      case 'alert':
+        this.animation = 'alert';
+        break;
+      case 'guide':
+        this.animation = 'walk';
+        break;
+    }
+  }
+
+  // ---- view ------------------------------------------------------------
+
+  private currentFrame(): { animation: AnimationName; frame: number } {
+    const anims = this.manifest.animations;
+    const name: AnimationName = anims[this.animation] ? this.animation : 'idle';
+    const def = anims[name]!;
+    const total = def.frames.length;
+    const raw = Math.floor(this.animTime * def.fps);
+    const frame = def.loop === false ? Math.min(raw, total - 1) : raw % total;
+    return { animation: name, frame };
+  }
+
+  view(): BuddyView {
+    const { animation, frame } = this.currentFrame();
+    return {
+      id: this.id,
+      name: this.name,
+      pack: this.pack,
+      x: this.x,
+      y: this.y,
+      facing: this.facing,
+      animation,
+      frame,
+      scale: this.scale,
+      mood: this.mood,
+      bubble: this.bubble,
+      pointer: this.pointer,
+    };
+  }
+}
+
+export function resolveAlertTarget(
+  req: AlertRequest,
+  displays: DisplayInfo[],
+  active: ActiveWindowInfo | null,
+  mouse: { x: number; y: number } | null,
+  fallbackDisplayId: number,
+): PendingAlert['target'] {
+  const target = req.target ?? 'active';
+  if (target === 'here') return { kind: 'here' };
+  if (target === 'mouse') {
+    if (mouse) {
+      const d = displayContaining(displays, mouse.x, mouse.y) ?? displays[0];
+      return { kind: 'point', x: mouse.x, y: mouse.y, displayId: d.id };
+    }
+    return { kind: 'here' };
+  }
+  if (typeof target === 'object') {
+    const d = displayContaining(displays, target.x, target.y) ?? displays[0];
+    return { kind: 'point', x: target.x, y: target.y, displayId: d.id };
+  }
+  // 'active'
+  if (active?.bounds) {
+    const c = rectCentre(active.bounds);
+    const d = displayContaining(displays, c.x, c.y) ?? displays[0];
+    return { kind: 'floor', x: c.x, displayId: d.id };
+  }
+  void fallbackDisplayId;
+  return { kind: 'here' };
+}
