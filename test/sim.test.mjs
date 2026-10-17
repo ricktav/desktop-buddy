@@ -189,3 +189,27 @@ test('mouse target resolves to a point on the right display', () => {
   run(20);
   assert.equal(b.displayId, 2);
 });
+
+test('double-click trick plays the pack animation with its effect, then returns to wandering', () => {
+  const { world, b, run } = makeWorld();
+  const uni = require('../buddies/unicorn/buddy.json');
+  const u = world.addBuddy('u1', 'unicorn', uni);
+  u.trick(0);
+  run(0.1);
+  assert.equal(u.mood, 'trick');
+  assert.equal(u.animation, 'rear');
+  assert.deepEqual(u.view().effect, { type: 'arc-letters', text: 'LILY' });
+  // Petting and idling do not interrupt the trick.
+  u.pet(100);
+  world.idleSeconds = 500;
+  run(1);
+  assert.equal(u.mood, 'trick');
+  world.idleSeconds = 0;
+  run(4);
+  assert.notEqual(u.mood, 'trick');
+  assert.equal(u.view().effect, null);
+  // A pack without a trick ignores double-clicks.
+  b.trick(0);
+  run(0.1);
+  assert.notEqual(b.mood, 'trick');
+});

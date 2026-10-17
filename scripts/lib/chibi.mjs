@@ -10,6 +10,7 @@ export function stroke(w = 1.6, c = OUT) {
 }
 
 function face(st, cx, cy, { eyes = 'open', mouth = 'smile' } = {}) {
+  if (st.face) return st.face(cx, cy, { eyes, mouth });
   const lashes = st.lashes
     ? (x) => `<path d="M ${x - 4.5} ${cy - 3.5} l -1.5 -1.5 M ${x + 4.5} ${cy - 3.5} l 1.5 -1.5" ${stroke(1.2)}/>`
     : () => '';
@@ -30,8 +31,9 @@ function face(st, cx, cy, { eyes = 'open', mouth = 'smile' } = {}) {
   else if (mouth === 'grin') m = `<path d="M ${cx - 7} ${cy + 7} q 7 9 14 0 z" fill="#C53D5E" ${stroke(1.6, lip)}/><path d="M ${cx - 4.5} ${cy + 8.2} h 9" stroke="#fff" stroke-width="2"/>`;
   else if (mouth === 'o') m = `<ellipse cx="${cx}" cy="${cy + 9}" rx="3" ry="3.6" fill="#C53D5E" ${stroke(1.4, lip)}/>`;
   else if (mouth === 'flat') m = `<path d="M ${cx - 5} ${cy + 9} h 10" fill="none" ${stroke(1.8, lip)}/>`;
-  return eye(cx - 7) + eye(cx + 7) + m +
+  const blush = st.blush === false ? '' :
     `<circle cx="${cx - 14}" cy="${cy + 6}" r="3" fill="#F7A3A3" opacity="0.6"/><circle cx="${cx + 14}" cy="${cy + 6}" r="3" fill="#F7A3A3" opacity="0.6"/>`;
+  return eye(cx - 7) + eye(cx + 7) + m + blush;
 }
 
 function head(st, cx, cy, opts = {}) {
@@ -40,8 +42,8 @@ function head(st, cx, cy, opts = {}) {
   ${st.hairBack ? st.hairBack(cx, cy) : ''}
   <circle cx="${cx}" cy="${cy}" r="20" fill="${st.skin}" ${stroke()}/>
   <path d="M ${cx - 18} ${cy - 6} q 18 -10 36 0" fill="none" stroke="${st.skinDark}" stroke-width="1" opacity="0.5"/>
-  <ellipse cx="${cx - 20}" cy="${cy + 2}" rx="3" ry="4" fill="${st.skin}" ${stroke(1.2)}/>
-  <ellipse cx="${cx + 20}" cy="${cy + 2}" rx="3" ry="4" fill="${st.skin}" ${stroke(1.2)}/>
+  ${st.ears === false ? '' : `<ellipse cx="${cx - 20}" cy="${cy + 2}" rx="3" ry="4" fill="${st.skin}" ${stroke(1.2)}/>
+  <ellipse cx="${cx + 20}" cy="${cy + 2}" rx="3" ry="4" fill="${st.skin}" ${stroke(1.2)}/>`}
   ${face(st, cx, cy + 1, opts)}
   ${st.hairFront ? st.hairFront(cx, cy) : ''}
   ${opts.headExtra ? opts.headExtra(cx, cy) : ''}

@@ -178,8 +178,8 @@ function lying({ eyes = 'open', neck = -50, ears = 'up', extra = '', tailLift = 
   );
 }
 
-/** Rearing on the hind legs and pointing with a foreleg. */
-function rearing({ eyes = 'open', extra = '' } = {}) {
+/** Rearing on the hind legs; `point` extends a foreleg toward the target. */
+function rearing({ eyes = 'open', extra = '', point = true, pawLift = 0 } = {}) {
   const by = 80;
   const rot = `rotate(-30 48 ${FLOOR})`;
   return svgWrap(
@@ -192,10 +192,15 @@ function rearing({ eyes = 'open', extra = '' } = {}) {
     `<path d="M 78 ${by + 8} q 6 8 14 2" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
     `<path d="M 78 ${by + 8} q 6 8 14 2" fill="none" stroke="url(#coatLegBack)" stroke-width="9" stroke-linecap="round"/>` +
     hoof(93, by + 14) +
-    // pointing foreleg: straight forward in local space, which the rotation lifts up-right
-    `<path d="M 86 ${by + 4} L 122 ${by + 6}" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
-    `<path d="M 86 ${by + 4} L 122 ${by + 6}" fill="none" stroke="url(#coatLeg)" stroke-width="9" stroke-linecap="round"/>` +
-    `<g transform="translate(125 ${by + 5}) rotate(-90) scale(0.8)">${hoof(0, 4)}</g>` +
+    (point
+      // pointing foreleg: straight forward in local space, which the rotation lifts up-right
+      ? `<path d="M 86 ${by + 4} L 122 ${by + 6}" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
+        `<path d="M 86 ${by + 4} L 122 ${by + 6}" fill="none" stroke="url(#coatLeg)" stroke-width="9" stroke-linecap="round"/>` +
+        `<g transform="translate(125 ${by + 5}) rotate(-90) scale(0.8)">${hoof(0, 4)}</g>`
+      // pawing foreleg, raised and bent
+      : `<path d="M 86 ${by + 4} q 14 ${-2 - pawLift} 18 ${-12 - pawLift}" fill="none" stroke="${OUT}" stroke-width="10.6" stroke-linecap="round"/>` +
+        `<path d="M 86 ${by + 4} q 14 ${-2 - pawLift} 18 ${-12 - pawLift}" fill="none" stroke="url(#coatLeg)" stroke-width="9" stroke-linecap="round"/>` +
+        hoof(105, by - 6 - pawLift)) +
     headNeck(84, by - 10, -62, { eyes, ears: 'up', glow: true }) +
     `</g>` +
     extra,
@@ -278,9 +283,20 @@ const anims = {
     fps: 2,
     frames: [dangling({ frameDy: 0 }), dangling({ frameDy: -2 })],
   },
+  // Double-click trick: rear up and paw the air.
+  rear: {
+    fps: 3,
+    frames: [
+      rearing({ point: false, pawLift: 0, eyes: 'wide', extra: SPARKLES(0) }),
+      rearing({ point: false, pawLift: 6, eyes: 'happy', extra: SPARKLES(3) }),
+      rearing({ point: false, pawLift: 2, eyes: 'wide', extra: SPARKLES(1) }),
+    ],
+  },
 };
 
 writePack('unicorn', {
   name: 'Aurora',
   petLines: ['*soft whinny*', '*shimmer*', '*nuzzles*', '✨', '*flicks tail*'],
+  // Double-click: rears up ("steigeren") and spells LILY in a rainbow.
+  doubleClick: { animation: 'rear', seconds: 4, effect: { type: 'arc-letters', text: 'LILY' } },
 }, anims);

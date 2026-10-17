@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && node scripts/copy-static.mjs",
-    "sprites": "node scripts/gen-lab-sprites.mjs && node scripts/gen-robot-sprites.mjs && node scripts/gen-unicorn-sprites.mjs && node scripts/gen-rainbowman-sprites.mjs && node scripts/gen-labdoc-sprites.mjs",
+    "sprites": "node scripts/gen-lab-sprites.mjs && node scripts/gen-robot-sprites.mjs && node scripts/gen-unicorn-sprites.mjs && node scripts/gen-rainbowman-sprites.mjs && node scripts/gen-labdoc-sprites.mjs && node scripts/gen-skeleton-sprites.mjs && node scripts/gen-pumpkin-sprites.mjs",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --dev",
     "test": "npm run build && node --test test/*.test.mjs",

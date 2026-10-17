@@ -20,8 +20,48 @@ interface BuddyEl {
   img: HTMLImageElement;
   bubble: HTMLDivElement | null;
   name: HTMLDivElement;
+  effect: SVGSVGElement | null;
+  effectKey: string | null;
   lastSrc: string;
   lastBubbleText: string | null;
+}
+
+const RAINBOW = ['#FF3B30', '#FF9500', '#FFD60A', '#34C759', '#2F9BFF', '#5856D6', '#AF52DE'];
+
+/** Rainbow arc over the buddy with the trick's letters spaced along it. */
+function arcLetters(text: string, w: number, h: number): SVGSVGElement {
+  const W = w * 3, H = h * 1.6;
+  const cx = W / 2, cy = H * 0.95, r = Math.max(w * 0.95, 60);
+  const band = Math.max(3, r * 0.06);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'effect');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', String(W));
+  svg.setAttribute('height', String(H));
+  svg.style.left = `${(w - W) / 2}px`;
+  svg.style.top = `${h * 0.2 - H}px`;
+  const parts: string[] = [];
+  RAINBOW.forEach((c, i) => {
+    const rr = r - i * band;
+    parts.push(`<path d="M ${cx - rr} ${cy} A ${rr} ${rr} 0 0 1 ${cx + rr} ${cy}" fill="none" stroke="${c}" stroke-width="${band + 0.5}" class="band" style="animation-delay:${i * 60}ms"/>`);
+  });
+  const letters = [...text];
+  const n = letters.length;
+  const spread = Math.min(Math.PI * 0.8, 0.42 * n);
+  letters.forEach((ch, i) => {
+    const a = Math.PI + (Math.PI - spread) / 2 + (spread * (i + 0.5)) / n;
+    const lr = r + band * 2.2;
+    const x = cx + Math.cos(a) * lr, y = cy + Math.sin(a) * lr;
+    const rot = (a * 180) / Math.PI + 90;
+    const size = Math.max(18, r * 0.42);
+    // Position and rotate with a group so the letter's own CSS pop animation
+    // (which uses transform-origin) does not fight the rotation.
+    parts.push(
+      `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${rot.toFixed(1)})"><text class="letter" style="animation-delay:${300 + i * 140}ms" font-size="${size}" fill="${RAINBOW[i % RAINBOW.length]}" text-anchor="middle" dominant-baseline="middle">${ch}</text></g>`,
+    );
+  });
+  svg.innerHTML = parts.join('');
+  return svg;
 }
 
 const PACK_BASE: string = (window as unknown as { BUDDY_PACK_BASE?: string }).BUDDY_PACK_BASE ?? 'buddy://';
@@ -56,7 +96,7 @@ function createEl(b: BuddyView): BuddyEl {
   name.textContent = b.name;
   root.append(img, name);
   stage.append(root);
-  return { root, img, bubble: null, name, lastSrc: '', lastBubbleText: null };
+  return { root, img, bubble: null, name, effect: null, effectKey: null, lastSrc: '', lastBubbleText: null };
 }
 
 function onDisplayFor(b: BuddyView): boolean {
@@ -124,6 +164,18 @@ function render(snapshot: WorldSnapshot): void {
       el.lastBubbleText = text;
     }
 
+    // Trick effect drawn around the buddy.
+    const effectKey = b.effect ? `${b.effect.type}:${b.effect.text}:${Math.round(w)}` : null;
+    if (effectKey !== el.effectKey) {
+      el.effect?.remove();
+      el.effect = null;
+      if (b.effect?.type === 'arc-letters') {
+        el.effect = arcLetters(b.effect.text, w, h);
+        el.root.append(el.effect);
+      }
+      el.effectKey = effectKey;
+    }
+
     // Guide pointer: a dashed lead from the raised paw to the target with a pulsing ring.
     if (b.pointer) {
       const px = b.pointer.x - display.bounds.x;
@@ -163,6 +215,8 @@ function buddyAt(target: EventTarget | null): string | null {
 }
 
 let press: { id: string; x: number; y: number; dragging: boolean; onBubble: boolean } | null = null;
+let lastClick: { id: string; t: number } | null = null;
+const DOUBLE_CLICK_MS = 400;
 
 document.addEventListener('mousemove', (e) => {
   if (press) {
@@ -196,8 +250,18 @@ document.addEventListener('mouseup', (e) => {
   if (p.dragging) {
     bridge.dragEnd(p.id);
   } else if (e.button === 0) {
-    if (p.onBubble) bridge.dismiss(p.id);
-    else bridge.pet(p.id);
+    if (p.onBubble) {
+      bridge.dismiss(p.id);
+    } else {
+      const now = performance.now();
+      if (lastClick && lastClick.id === p.id && now - lastClick.t < DOUBLE_CLICK_MS) {
+        bridge.trick(p.id);
+        lastClick = null;
+      } else {
+        bridge.pet(p.id);
+        lastClick = { id: p.id, t: now };
+      }
+    }
   }
   setIgnore(buddyAt(document.elementFromPoint(e.clientX, e.clientY)) === null);
 });

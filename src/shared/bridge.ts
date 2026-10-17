@@ -10,6 +10,8 @@ export interface BuddyBridge {
   dragStart(id: string): void;
   dragEnd(id: string): void;
   pet(id: string): void;
+  /** Double-click on the buddy's body. */
+  trick(id: string): void;
   dismiss(id: string): void;
   contextMenu(id: string): void;
 }

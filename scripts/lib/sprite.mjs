@@ -23,7 +23,7 @@ export const HEART = (x = 112, y = 22) =>
   `<path d="M ${x} ${y} c -3 -6 -12 -4 -10 3 c 1 4 6 7 10 11 c 4 -4 9 -7 10 -11 c 2 -7 -7 -9 -10 -3 z" fill="#F25F7A" stroke="#C03B58" stroke-width="1.2"/>`;
 
 /** Write a pack folder: frames + buddy.json. `anims` is {name: {fps, frames: [svgString]}}. */
-export function writePack(pack, { name, feetOffset = H - FLOOR, petLines = [], pixelArt = false, scale = 1 }, anims) {
+export function writePack(pack, { name, feetOffset = H - FLOOR, petLines = [], pixelArt = false, scale = 1, ...extra }, anims) {
   const dir = join(ROOT, 'buddies', pack);
   mkdirSync(dir, { recursive: true });
   const manifest = {
@@ -35,6 +35,7 @@ export function writePack(pack, { name, feetOffset = H - FLOOR, petLines = [], p
     feetOffset,
     ...(pixelArt ? { pixelArt: true } : {}),
     petLines,
+    ...extra,
     animations: {},
   };
   for (const [anim, def] of Object.entries(anims)) {

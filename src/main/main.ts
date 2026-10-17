@@ -141,6 +141,7 @@ function buildMenu(forBuddyId?: string): Menu {
     ...(forBuddy
       ? [
           { label: `Pet ${forBuddy.name}`, click: () => forBuddy.pet(Date.now()) },
+          ...(forBuddy.manifest.doubleClick ? [{ label: 'Do a trick', click: () => forBuddy.trick(Date.now()) }] : []),
           { label: 'Dismiss bubble', click: () => forBuddy.dismissBubble() },
           { label: `Remove ${forBuddy.name}`, click: () => removeBuddyAndSave(forBuddy.id) },
           { type: 'separator' as const },
@@ -239,6 +240,7 @@ function wireIpc(): void {
     if (draggingId === id) draggingId = null;
   });
   ipcMain.on('pet', (_e, id: string) => world.findBuddy(id)?.pet(Date.now()));
+  ipcMain.on('trick', (_e, id: string) => world.findBuddy(id)?.trick(Date.now()));
   ipcMain.on('dismiss', (_e, id: string) => world.findBuddy(id)?.dismissBubble());
   ipcMain.on('context-menu', (e, id: string) => {
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined;

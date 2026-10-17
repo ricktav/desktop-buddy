@@ -10,6 +10,7 @@ const bridge: BuddyBridge = {
   dragStart: (id) => ipcRenderer.send('drag-start', id),
   dragEnd: (id) => ipcRenderer.send('drag-end', id),
   pet: (id) => ipcRenderer.send('pet', id),
+  trick: (id) => ipcRenderer.send('trick', id),
   dismiss: (id) => ipcRenderer.send('dismiss', id),
   contextMenu: (id) => ipcRenderer.send('context-menu', id),
 };

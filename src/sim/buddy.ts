@@ -8,6 +8,7 @@ import type {
   BuddyView,
   DisplayInfo,
   Rect,
+  TrickEffect,
 } from '../shared/types';
 
 export interface SimConfig {
@@ -84,6 +85,7 @@ export class Buddy {
   animation: AnimationName = 'idle';
   bubble: BubbleState | null = null;
   pointer: { x: number; y: number } | null = null;
+  effect: TrickEffect | null = null;
 
   private animTime = 0;
   private targetX: number | null = null;
@@ -134,8 +136,20 @@ export class Buddy {
     if (this.bubble) this.bubble.until = 0;
   }
 
+  /** Double-click: perform the pack's trick, if it defines one. */
+  trick(now: number): void {
+    const def = this.manifest.doubleClick;
+    if (!def || this.mood === 'drag' || this.mood === 'fall' || this.hasAlert) return;
+    this.wasIdle = false;
+    this.setMood('trick');
+    this.animation = def.animation && this.manifest.animations[def.animation] ? def.animation : 'happy';
+    this.timer = def.seconds ?? 3;
+    this.effect = def.effect ?? null;
+    this.bubble = def.say ? { text: def.say, level: 'info', until: now + this.timer * 1000 } : null;
+  }
+
   pet(now: number): void {
-    if (this.mood === 'drag') return;
+    if (this.mood === 'drag' || this.mood === 'trick') return;
     if (this.mood === 'sleep') {
       // Waking a sleeping buddy by petting it.
       this.wasIdle = false;
@@ -149,6 +163,7 @@ export class Buddy {
   }
 
   startDrag(px: number, py: number): void {
+    this.effect = null;
     this.dragOffset = { x: this.x - px, y: this.y - py };
     this.setMood('drag');
     this.targetX = null;
@@ -188,7 +203,7 @@ export class Buddy {
 
     // 1. Idle handling: sit, then sleep. Any activity wakes the buddy.
     const idle = idleSeconds >= this.cfg.idleSitAfter;
-    if (!this.hasAlert && this.mood !== 'drag' && this.mood !== 'fall' && this.mood !== 'guide') {
+    if (!this.hasAlert && this.mood !== 'drag' && this.mood !== 'fall' && this.mood !== 'guide' && this.mood !== 'trick') {
       if (idle) {
         if (idleSeconds >= this.cfg.idleSleepAfter && this.mood !== 'sleep') this.setMood('sleep');
         else if (idleSeconds < this.cfg.idleSleepAfter && this.mood !== 'sit' && this.mood !== 'sleep') {
@@ -203,7 +218,7 @@ export class Buddy {
     }
 
     // 2. Start a queued alert when free.
-    if (!this.currentAlert && this.pendingAlerts.length && this.mood !== 'drag' && this.mood !== 'fall') {
+    if (!this.currentAlert && this.pendingAlerts.length && this.mood !== 'drag' && this.mood !== 'fall' && this.mood !== 'trick') {
       this.beginAlert(this.pendingAlerts.shift()!, displays, now);
     }
 
@@ -234,6 +249,14 @@ export class Buddy {
       case 'happy':
         this.timer -= dt;
         if (this.timer <= 0) this.setMood('wander');
+        break;
+      case 'trick':
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          this.effect = null;
+          this.setMood('happy');
+          this.timer = 1.2;
+        }
         break;
       case 'drag':
         break;
@@ -462,6 +485,9 @@ export class Buddy {
       case 'guide':
         this.animation = 'walk';
         break;
+      case 'trick':
+        this.targetX = null;
+        break;
     }
   }
 
@@ -492,6 +518,7 @@ export class Buddy {
       mood: this.mood,
       bubble: this.bubble,
       pointer: this.pointer,
+      effect: this.effect,
     };
   }
 }

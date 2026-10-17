@@ -12,6 +12,14 @@
     "✨",
     "*flicks tail*"
   ],
+  "doubleClick": {
+    "animation": "rear",
+    "seconds": 4,
+    "effect": {
+      "type": "arc-letters",
+      "text": "LILY"
+    }
+  },
   "animations": {
     "idle": {
       "frames": [
@@ -83,6 +91,14 @@
         "drag-1.svg"
       ],
       "fps": 2
+    },
+    "rear": {
+      "frames": [
+        "rear-0.svg",
+        "rear-1.svg",
+        "rear-2.svg"
+      ],
+      "fps": 3
     }
   }
 }

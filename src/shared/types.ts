@@ -36,7 +36,9 @@ export type AnimationName =
   | 'point'
   | 'alert'
   | 'happy'
-  | 'drag';
+  | 'drag'
+  | 'rear'
+  | 'trick';
 
 export interface AnimationDef {
   frames: string[];
@@ -46,6 +48,24 @@ export interface AnimationDef {
 }
 
 /** Contents of a buddy folder's buddy.json. */
+/** A visual effect the renderer draws around the buddy during a trick. */
+export interface TrickEffect {
+  type: 'arc-letters';
+  /** Letters shown along a rainbow arc above the buddy. */
+  text: string;
+}
+
+/** What a buddy does when double-clicked. */
+export interface TrickDef {
+  /** Animation to play; falls back to 'happy'. */
+  animation?: AnimationName;
+  /** How long the trick lasts. Default 3. */
+  seconds?: number;
+  effect?: TrickEffect;
+  /** Optional bubble text shown during the trick. */
+  say?: string;
+}
+
 export interface BuddyManifest {
   name: string;
   /** Frame size in CSS pixels before scaling. */
@@ -62,9 +82,11 @@ export interface BuddyManifest {
   animations: Partial<Record<AnimationName, AnimationDef>> & { idle: AnimationDef; walk: AnimationDef };
   /** Optional lines the buddy says when petted. */
   petLines?: string[];
+  /** Optional trick performed on double-click. */
+  doubleClick?: TrickDef;
 }
 
-export type BuddyMood = 'wander' | 'approach' | 'watch' | 'sit' | 'sleep' | 'alert' | 'guide' | 'drag' | 'fall' | 'happy';
+export type BuddyMood = 'wander' | 'approach' | 'watch' | 'sit' | 'sleep' | 'alert' | 'guide' | 'drag' | 'fall' | 'happy' | 'trick';
 
 export interface BubbleState {
   text: string;
@@ -91,6 +113,8 @@ export interface BuddyView {
   bubble: BubbleState | null;
   /** When guiding, the global point being pointed at. */
   pointer: { x: number; y: number } | null;
+  /** Active trick effect, if any. */
+  effect: TrickEffect | null;
 }
 
 export interface WorldSnapshot {

@@ -8,8 +8,8 @@ const EXPECTED = ['idle', 'walk', 'sit', 'sleep', 'watch', 'point', 'alert', 'ha
 const root = join(import.meta.dirname, '..', 'buddies');
 const packs = readdirSync(root).filter((d) => statSync(join(root, d)).isDirectory());
 
-test('bundled packs include the seven shipped buddies', () => {
-  for (const p of ['lab-yellow', 'lab-chocolate', 'lab-black', 'robot-pixel', 'unicorn', 'rainbow-man', 'lab-doctor']) {
+test('bundled packs include the nine shipped buddies', () => {
+  for (const p of ['lab-yellow', 'lab-chocolate', 'lab-black', 'robot-pixel', 'unicorn', 'rainbow-man', 'lab-doctor', 'skeleton', 'pumpkin']) {
     assert.ok(packs.includes(p), `${p} missing`);
   }
 });
@@ -22,6 +22,9 @@ for (const pack of packs) {
     assert.ok(m.frameWidth > 0 && m.frameHeight > 0);
     for (const r of REQUIRED) assert.ok(m.animations[r]?.frames?.length, `${pack}: ${r} required`);
     for (const a of EXPECTED) assert.ok(m.animations[a]?.frames?.length, `${pack}: shipped packs should define ${a}`);
+    if (m.doubleClick?.animation) {
+      assert.ok(m.animations[m.doubleClick.animation], `${pack}: doubleClick animation ${m.doubleClick.animation} must exist`);
+    }
     for (const [a, def] of Object.entries(m.animations)) {
       assert.ok(def.fps > 0, `${pack}/${a} fps`);
       for (const f of def.frames) {
@@ -34,3 +37,9 @@ for (const pack of packs) {
     }
   });
 }
+
+test('unicorn double-click trick rears and spells LILY', () => {
+  const m = JSON.parse(readFileSync(join(root, 'unicorn', 'buddy.json'), 'utf8'));
+  assert.equal(m.doubleClick.animation, 'rear');
+  assert.deepEqual(m.doubleClick.effect, { type: 'arc-letters', text: 'LILY' });
+});

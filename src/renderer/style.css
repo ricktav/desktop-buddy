@@ -114,3 +114,30 @@ html, body {
   100% { transform: scale(1.8); opacity: 0; }
 }
 @keyframes march { to { stroke-dashoffset: -12; } }
+
+.effect {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+.effect .band {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: draw 700ms ease-out forwards;
+  stroke-linecap: round;
+}
+.effect .letter {
+  font-family: "Arial Rounded MT Bold", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: popLetter 500ms cubic-bezier(0.2, 1.4, 0.4, 1) forwards, floatLetter 1.6s ease-in-out 500ms infinite alternate;
+}
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes popLetter { from { opacity: 0; scale: 0.2; } to { opacity: 1; scale: 1; } }
+@keyframes floatLetter { from { translate: 0 0; } to { translate: 0 -4px; } }
