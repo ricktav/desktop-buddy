@@ -65,6 +65,52 @@ export function badgeDelta(prev: number | null, next: number): number | null {
 
 export const NC_DB_PATH = join(homedir(), 'Library', 'Group Containers', 'group.com.apple.usernoted', 'db2', 'db');
 
+export interface LaunchContext {
+  /** True when launchd started us directly (the background service). */
+  viaLaunchd: boolean;
+  /** The .app that macOS holds responsible for our file access (a terminal app when started from a shell). */
+  responsibleApp: string | null;
+  /** The app bundle path that must be granted Full Disk Access. */
+  grantTo: string;
+}
+
+/** Work out which app macOS will check for permissions by walking up the process tree. */
+export async function launchContext(): Promise<LaunchContext> {
+  const self = appBundleOf(process.execPath) ?? process.execPath;
+  if (process.platform !== 'darwin') return { viaLaunchd: false, responsibleApp: null, grantTo: self };
+  let pid = process.ppid;
+  let responsible: string | null = null;
+  for (let hops = 0; hops < 12 && pid > 1; hops++) {
+    let line: string;
+    try {
+      line = (await run('ps', ['-o', 'ppid=,comm=', '-p', String(pid)])).trim();
+    } catch {
+      break;
+    }
+    const m = /^(\d+)\s+(.*)$/.exec(line);
+    if (!m) break;
+    const comm = m[2];
+    const bundle = appBundleOf(comm);
+    if (bundle && !bundle.includes('/node_modules/electron/')) {
+      responsible = bundle;
+      break;
+    }
+    pid = Number(m[1]);
+  }
+  const viaLaunchd = process.ppid === 1 && responsible === null;
+  return { viaLaunchd, responsibleApp: responsible, grantTo: responsible ?? self };
+}
+
+function appBundleOf(path: string): string | null {
+  const i = path.indexOf('.app/');
+  return i >= 0 ? path.slice(0, i + 4) : null;
+}
+
+export function appDisplayName(bundlePath: string): string {
+  const base = bundlePath.split('/').pop() ?? bundlePath;
+  return base.replace(/\.app$/, '');
+}
+
 function run(cmd: string, args: string[], timeout = 4000): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { timeout, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
@@ -75,6 +121,38 @@ interface NcRow {
   rec_id: number;
   identifier: string;
   data_hex: string;
+}
+
+type SqliteModule = { DatabaseSync: new (path: string, opts?: { readOnly?: boolean }) => { prepare(sql: string): { all(...p: unknown[]): unknown[]; get(...p: unknown[]): unknown }; close(): void } };
+
+function loadSqlite(): SqliteModule | null {
+  try {
+    // Electron 35+ (Node 22.13+) ships node:sqlite; reading in-process avoids a
+    // helper command and keeps permission attribution with this app.
+    return require('node:sqlite') as SqliteModule;
+  } catch {
+    return null;
+  }
+}
+
+/** Run a read-only query against the Notification Center database. */
+async function ncQuery<T>(sql: string): Promise<T[]> {
+  const mod = loadSqlite();
+  if (mod) {
+    const db = new mod.DatabaseSync(NC_DB_PATH, { readOnly: true });
+    try {
+      return db.prepare(sql).all() as T[];
+    } finally {
+      db.close();
+    }
+  }
+  const out = await run('sqlite3', ['-readonly', '-json', NC_DB_PATH, sql]);
+  return out.trim() ? (JSON.parse(out) as T[]) : [];
+}
+
+async function ncMaxId(): Promise<number> {
+  const rows = await ncQuery<{ m: number }>('SELECT IFNULL(MAX(rec_id), 0) AS m FROM record;');
+  return Number(rows[0]?.m ?? 0) || 0;
 }
 
 /**
@@ -104,19 +182,16 @@ export class NotificationCenterWatcher {
     }
     try {
       if (this.lastId === null) {
-        const out = await run('sqlite3', ['-readonly', NC_DB_PATH, 'SELECT IFNULL(MAX(rec_id), 0) FROM record;']);
-        this.lastId = Number(out.trim()) || 0;
+        this.lastId = await ncMaxId();
         if (this.warned) console.log('Notification Center watcher is reading notifications now.');
         return [];
       }
       const ids = this.apps.map((a) => `'${a.bundleId.replace(/'/g, "''")}'`).join(',');
       const sql = `SELECT r.rec_id AS rec_id, a.identifier AS identifier, hex(r.data) AS data_hex FROM record r JOIN app a ON a.app_id = r.app_id WHERE r.rec_id > ${this.lastId} AND a.identifier IN (${ids}) ORDER BY r.rec_id;`;
-      const out = await run('sqlite3', ['-readonly', '-json', NC_DB_PATH, sql]);
+      const rows = await ncQuery<NcRow>(sql);
       // Advance even when nothing matched, so we never re-scan old rows.
-      const maxOut = await run('sqlite3', ['-readonly', NC_DB_PATH, 'SELECT IFNULL(MAX(rec_id), 0) FROM record;']);
-      this.lastId = Math.max(this.lastId, Number(maxOut.trim()) || 0);
-      if (!out.trim()) return [];
-      const rows = JSON.parse(out) as NcRow[];
+      this.lastId = Math.max(this.lastId, await ncMaxId());
+      if (!rows.length) return [];
       const results: IncomingNotification[] = [];
       for (const row of rows) {
         const app = this.apps.find((a) => a.bundleId === row.identifier);
@@ -134,9 +209,17 @@ export class NotificationCenterWatcher {
       return results;
     } catch (err) {
       if (!this.warned) {
+        const ctx = await launchContext();
+        const how = ctx.viaLaunchd
+          ? 'running as the background service'
+          : ctx.responsibleApp
+            ? `started from ${appDisplayName(ctx.responsibleApp)}, which macOS holds responsible for file access`
+            : 'started from a shell';
         console.warn(
           `Notification Center watcher paused: ${(err as Error).message.split('\n')[0]}. ` +
-            `Grant Full Disk Access to ${process.execPath} (or Terminal when using npm start) to read ${NC_DB_PATH}. Retrying every minute.`,
+            `The buddy is ${how}. Grant Full Disk Access to: ${ctx.grantTo}` +
+            (ctx.responsibleApp ? ` (or install the background service with "buddy service install" so the grant on Electron.app applies).` : '.') +
+            ' Retrying every minute.',
         );
         this.warned = true;
       }
@@ -264,6 +347,8 @@ export async function diagnose(cfg: NotificationsConfig): Promise<string[]> {
     bad(`platform is ${process.platform}; notification watching only works on macOS`);
     return out;
   }
+  const ctx = await launchContext();
+  info(`this check runs from ${ctx.responsibleApp ? appDisplayName(ctx.responsibleApp) : 'a shell'}; the buddy's own permissions may differ (see its log)`);
   info(`watched apps: ${cfg.apps.map((a) => `${a.label} (${a.bundleId})`).join(', ') || '(none)'}`);
   info(`badge apps: ${cfg.badgeApps.join(', ') || '(none)'}; enabled=${cfg.enabled}; showBody=${cfg.showBody}`);
 
@@ -271,11 +356,10 @@ export async function diagnose(cfg: NotificationsConfig): Promise<string[]> {
   out.push('', 'Notification Center database');
   info(NC_DB_PATH);
   try {
-    const count = (await run('sqlite3', ['-readonly', NC_DB_PATH, 'SELECT COUNT(*) FROM record;'])).trim();
-    ok(`readable; ${count} records`);
-    const apps = await run('sqlite3', ['-readonly', '-json', NC_DB_PATH,
-      'SELECT a.identifier AS id, COUNT(*) AS n, MAX(r.rec_id) AS last FROM record r JOIN app a ON a.app_id = r.app_id GROUP BY a.identifier ORDER BY last DESC LIMIT 20;']);
-    const rows = apps.trim() ? (JSON.parse(apps) as Array<{ id: string; n: number; last: number }>) : [];
+    const count = (await ncQuery<{ c: number }>('SELECT COUNT(*) AS c FROM record;'))[0]?.c ?? 0;
+    ok(`readable; ${count} records (via ${loadSqlite() ? 'built-in sqlite' : 'sqlite3 command'})`);
+    const rows = await ncQuery<{ id: string; n: number; last: number }>(
+      'SELECT a.identifier AS id, COUNT(*) AS n, MAX(r.rec_id) AS last FROM record r JOIN app a ON a.app_id = r.app_id GROUP BY a.identifier ORDER BY last DESC LIMIT 20;');
     info('apps with recent notifications (most recent first):');
     for (const r of rows) info(`   ${r.id}  (${r.n} records)`);
     if (!rows.length) bad('no records at all: macOS has not stored any notifications, or the table is empty');
@@ -283,9 +367,8 @@ export async function diagnose(cfg: NotificationsConfig): Promise<string[]> {
     const matching = rows.filter((r) => watchedIds.has(r.id));
     if (matching.length) {
       ok(`watched app(s) present: ${matching.map((m) => m.id).join(', ')}`);
-      const latest = await run('sqlite3', ['-readonly', '-json', NC_DB_PATH,
-        `SELECT r.rec_id AS rec_id, a.identifier AS identifier, hex(r.data) AS data_hex FROM record r JOIN app a ON a.app_id = r.app_id WHERE a.identifier IN (${[...watchedIds].map((i) => `'${i.replace(/'/g, "''")}'`).join(',')}) ORDER BY r.rec_id DESC LIMIT 1;`]);
-      const row = (JSON.parse(latest) as NcRow[])[0];
+      const row = (await ncQuery<NcRow>(
+        `SELECT r.rec_id AS rec_id, a.identifier AS identifier, hex(r.data) AS data_hex FROM record r JOIN app a ON a.app_id = r.app_id WHERE a.identifier IN (${[...watchedIds].map((i) => `'${i.replace(/'/g, "''")}'`).join(',')}) ORDER BY r.rec_id DESC LIMIT 1;`))[0];
       try {
         const xml = await plistToXml(Buffer.from(row.data_hex ?? '', 'hex'));
         const parsed = parseNotificationPlist(xml);
@@ -305,8 +388,9 @@ export async function diagnose(cfg: NotificationsConfig): Promise<string[]> {
     }
   } catch (err) {
     bad(`cannot read the database: ${(err as Error).message.split('\n')[0]}`);
-    info('   Grant Full Disk Access (System Settings → Privacy & Security → Full Disk Access) to the app running the buddy:');
-    info('   Terminal/iTerm for `npm start`, or the Electron binary for the background service. Then restart it.');
+    info(`   For THIS check, grant Full Disk Access to ${ctx.responsibleApp ? appDisplayName(ctx.responsibleApp) : 'your terminal app'}.`);
+    info('   For the buddy itself, see its log line "Notification Center watcher paused": it names the app to grant.');
+    info('   Simplest: run it as the background service (buddy service install) and grant Electron.app.');
   }
 
   // 2. Dock badge

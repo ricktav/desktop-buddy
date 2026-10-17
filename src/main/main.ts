@@ -9,7 +9,7 @@ import { configPath, loadConfig, saveConfig, userBuddiesDir } from './config';
 import { installPackProtocol, listAvailablePacks, loadedPackManifests, loadPack, registerPackScheme } from './packs';
 import { ReminderScheduler } from './reminders';
 import { TimerManager, timerDoneMessage } from './timers';
-import { NotificationService, announcement } from './notifications';
+import { NotificationService, announcement, launchContext, appDisplayName, type LaunchContext } from './notifications';
 import { allDisplays, OverlayWindows } from './windows';
 
 const DEV = process.argv.includes('--dev');
@@ -53,6 +53,7 @@ const timers = new TimerManager((t) => {
   buildTray();
 });
 let notifications: NotificationService | null = null;
+let launchCtx: LaunchContext | null = null;
 
 function startNotifications(): void {
   notifications?.stop();
@@ -210,12 +211,18 @@ function buildMenu(forBuddyId?: string): Menu {
       ? []
       : [
           {
+            label: launchCtx?.responsibleApp
+              ? `Started from ${appDisplayName(launchCtx.responsibleApp)}: grant Full Disk Access to that app (or use the service)`
+              : 'Running as a service: grant Full Disk Access to Electron.app',
+            enabled: false,
+          },
+          {
             label: 'Open Full Disk Access settings…',
             click: () => void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'),
           },
           {
-            label: 'Reveal the app to add there (Electron.app)…',
-            click: () => shell.showItemInFolder(appBundlePath()),
+            label: `Reveal the app to add there (${appDisplayName(launchCtx?.grantTo ?? appBundlePath())})…`,
+            click: () => shell.showItemInFolder(launchCtx?.grantTo ?? appBundlePath()),
           },
         ]),
     { label: `Dock badges: ${nstat?.dockBadge ? 'watching ' + cfg.notifications.badgeApps.join(', ') : 'unavailable'}`, enabled: false },
@@ -371,6 +378,14 @@ app.whenReady().then(async () => {
     systemPreferences.isTrustedAccessibilityClient(true);
   }
 
+  launchCtx = await launchContext();
+  console.log(
+    launchCtx.viaLaunchd
+      ? 'launched by launchd (background service); permissions apply to Electron.app'
+      : launchCtx.responsibleApp
+        ? `launched from ${appDisplayName(launchCtx.responsibleApp)}; macOS permissions (Full Disk Access, Accessibility) must be granted to that app`
+        : 'launched from a shell',
+  );
   cfg = loadConfig();
   world = new World({ cfg: simConfig(cfg) });
   world.setDisplays(allDisplays());
