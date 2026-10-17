@@ -21,7 +21,9 @@ and you can add your own as folders of sprite frames.
 **Choosing buddies.** Click the paw in the menu bar and open *Buddies*: each
 pack is a checkbox. Tick one to put it on screen, untick it to remove it.
 Several can be on screen at once, and *Remove all buddies* clears the
-screen. Right-clicking a buddy also offers *Remove*. From a terminal:
+screen. Right-clicking a buddy also offers *Remove*. If you ever end up
+with nobody on screen, tick a pack again, use *Reset to default buddy*, or
+simply relaunch: the app always starts with at least Biscuit. From a terminal:
 `buddy add unicorn`, `buddy remove <id>` (ids are listed by `buddy buddies`).
 Your selection is saved to the config file.
 

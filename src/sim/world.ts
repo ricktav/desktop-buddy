@@ -42,7 +42,11 @@ export class World {
 
   setDisplays(displays: DisplayInfo[]): void {
     this.displays = displays;
-    for (const b of this.buddies) b.onDisplaysChanged(displays);
+    const primary = displays.find((d) => d.primary) ?? displays[0];
+    for (const b of this.buddies) {
+      if (primary && !displays.some((d) => d.id === b.displayId)) b.placeOn(primary);
+      else b.onDisplaysChanged(displays);
+    }
   }
 
   addBuddy(id: string, pack: string, manifest: BuddyManifest, opts: { name?: string; scale?: number } = {}): Buddy {

@@ -52,14 +52,21 @@ function loadBuddies(): void {
       console.error((err as Error).message);
     }
   }
-  if (world.buddies.length === 0 && cfg.buddies.some((e) => e.enabled !== false)) {
-    // Every configured pack failed to load: fall back to the default dog.
+  if (world.buddies.length === 0) {
+    // Nothing configured, or every configured pack failed to load: start with
+    // the default dog so the app never launches with an empty screen.
     try {
       addBuddyFromEntry({ pack: 'lab-yellow' });
+      if (!cfg.buddies.some((e) => e.pack === 'lab-yellow' && e.enabled !== false)) {
+        cfg.buddies.push({ pack: 'lab-yellow', enabled: true });
+        saveConfig(cfg);
+      }
+      console.log('no buddies configured; added the default dog');
     } catch (err) {
       console.error('no buddies could be loaded:', (err as Error).message);
     }
   }
+  console.log(`buddies on screen: ${world.buddies.map((b) => b.id).join(', ') || '(none)'}`);
 }
 
 /** Remove one buddy from the screen and from the saved config. */
@@ -76,11 +83,15 @@ function removeBuddyAndSave(id: string): boolean {
 
 /** Tick or untick a pack in the Buddies menu. */
 function setPackEnabled(ref: string, enabled: boolean): void {
+  console.log(`${enabled ? 'enable' : 'disable'} pack ${ref}`);
   if (enabled) {
     try {
-      addBuddyFromEntry({ pack: ref });
+      const id = addBuddyFromEntry({ pack: ref });
       cfg.buddies.push({ pack: ref, enabled: true });
+      const b = world.findBuddy(id);
+      console.log(`added ${id} at ${b?.x.toFixed(0)},${b?.y.toFixed(0)} on display ${b?.displayId}`);
     } catch (err) {
+      console.error('could not add buddy:', (err as Error).message);
       dialog.showErrorBox('Could not load buddy', (err as Error).message);
     }
   } else {
@@ -144,6 +155,18 @@ function buildMenu(forBuddyId?: string): Menu {
         for (const b of [...world.buddies]) world.removeBuddy(b.id);
         cfg.buddies = [];
         saveConfig(cfg);
+        buildTray();
+      },
+    },
+    {
+      label: 'Reset to default buddy',
+      click: () => {
+        for (const b of [...world.buddies]) world.removeBuddy(b.id);
+        cfg.buddies = [{ pack: 'lab-yellow', enabled: true }];
+        saveConfig(cfg);
+        loadBuddies();
+        world.setDisplays(allDisplays());
+        overlays.sync();
         buildTray();
       },
     },
@@ -224,6 +247,7 @@ function wireIpc(): void {
 }
 
 function tick(): void {
+  if (world.displays.length === 0) world.setDisplays(allDisplays());
   world.idleSeconds = powerMonitor.getSystemIdleTime();
   if (draggingId) {
     const b = world.findBuddy(draggingId);
