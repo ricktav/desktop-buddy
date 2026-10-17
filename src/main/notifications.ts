@@ -174,9 +174,26 @@ export class DockBadgeWatcher {
     return process.platform === 'darwin' && this.appNames.length > 0 && !this.failed;
   }
 
+  private introduced = false;
+
   async poll(): Promise<IncomingNotification[]> {
     if (!this.available) return [];
     const results: IncomingNotification[] = [];
+    if (!this.introduced) {
+      this.introduced = true;
+      try {
+        const tiles = await listDockBadges();
+        const names = tiles.map(([n, l]) => (l ? `${n}(${l})` : n));
+        console.log(`Dock tiles: ${names.join(', ') || '(none readable)'}`);
+        for (const name of this.appNames) {
+          if (!tiles.some(([n]) => n.toLowerCase() === name.toLowerCase())) {
+            console.warn(`Dock badge watcher: "${name}" is not in the Dock, so its badge cannot be watched. Keep the app in the Dock (or running).`);
+          }
+        }
+      } catch (err) {
+        console.warn(`Dock badge watcher: cannot list the Dock: ${(err as Error).message.split('\n')[0]}`);
+      }
+    }
     for (const name of this.appNames) {
       try {
         const label = await readDockBadge(name);
@@ -184,6 +201,7 @@ export class DockBadgeWatcher {
         const prev = this.counts.get(name) ?? null;
         const delta = badgeDelta(prev, next);
         this.counts.set(name, next);
+        if (prev !== null && prev !== next) console.log(`Dock badge ${name}: ${prev} → ${next}`);
         if (delta !== null) results.push({ label: name, title: null, body: null, unread: delta, source: 'dock-badge' });
       } catch (err) {
         if (!this.failed) console.warn(`Dock badge watcher disabled: ${(err as Error).message}`);
@@ -192,6 +210,31 @@ export class DockBadgeWatcher {
     }
     return results;
   }
+}
+
+/** Every app tile in the Dock with its badge label, e.g. [["WhatsApp", "3"], ["Mail", ""]]. */
+export async function listDockBadges(): Promise<Array<[string, string]>> {
+  const script = `
+tell application "System Events"
+  tell process "Dock"
+    set out to ""
+    repeat with el in UI elements of list 1
+      set n to name of el
+      set lbl to ""
+      try
+        set lbl to value of attribute "AXStatusLabel" of el
+      end try
+      if lbl is missing value then set lbl to ""
+      set out to out & n & tab & lbl & linefeed
+    end repeat
+    return out
+  end tell
+end tell`;
+  const raw = await run('osascript', ['-e', script], 6000);
+  return raw.split('\n').filter((l) => l.includes('\t')).map((l) => {
+    const [n, lbl] = l.split('\t');
+    return [n, lbl ?? ''];
+  });
 }
 
 async function readDockBadge(appName: string): Promise<string> {
@@ -268,6 +311,12 @@ export async function diagnose(cfg: NotificationsConfig): Promise<string[]> {
 
   // 2. Dock badge
   out.push('', 'Dock badge');
+  try {
+    const tiles = await listDockBadges();
+    info('Dock tiles: ' + (tiles.map(([n, l]) => (l ? `${n}(${l})` : n)).join(', ') || '(none readable)'));
+  } catch (err) {
+    bad(`cannot list the Dock: ${(err as Error).message.split('\n')[0]} (Accessibility permission for Terminal?)`);
+  }
   for (const name of cfg.badgeApps) {
     try {
       const label = await readDockBadge(name);
