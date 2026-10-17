@@ -52,13 +52,43 @@ function loadBuddies(): void {
       console.error((err as Error).message);
     }
   }
-  if (world.buddies.length === 0) {
+  if (world.buddies.length === 0 && cfg.buddies.some((e) => e.enabled !== false)) {
+    // Every configured pack failed to load: fall back to the default dog.
     try {
       addBuddyFromEntry({ pack: 'lab-yellow' });
     } catch (err) {
       console.error('no buddies could be loaded:', (err as Error).message);
     }
   }
+}
+
+/** Remove one buddy from the screen and from the saved config. */
+function removeBuddyAndSave(id: string): boolean {
+  const b = world.findBuddy(id);
+  if (!b) return false;
+  world.removeBuddy(b.id);
+  const i = cfg.buddies.findIndex((e) => e.enabled !== false && e.pack === b.pack);
+  if (i >= 0) cfg.buddies.splice(i, 1);
+  saveConfig(cfg);
+  buildTray();
+  return true;
+}
+
+/** Tick or untick a pack in the Buddies menu. */
+function setPackEnabled(ref: string, enabled: boolean): void {
+  if (enabled) {
+    try {
+      addBuddyFromEntry({ pack: ref });
+      cfg.buddies.push({ pack: ref, enabled: true });
+    } catch (err) {
+      dialog.showErrorBox('Could not load buddy', (err as Error).message);
+    }
+  } else {
+    for (const b of world.buddies.filter((x) => x.pack === ref)) world.removeBuddy(b.id);
+    cfg.buddies = cfg.buddies.filter((e) => e.pack !== ref);
+  }
+  saveConfig(cfg);
+  buildTray();
 }
 
 async function reloadConfig(): Promise<void> {
@@ -77,43 +107,46 @@ function sendAlert(req: AlertRequest) {
 
 function buildMenu(forBuddyId?: string): Menu {
   const available = listAvailablePacks();
-  const buddyItems = world.buddies.map((b) => ({
-    label: `${b.name} (${b.pack})`,
+  const activePacks = new Set(world.buddies.map((b) => b.pack));
+  // One checkbox per pack: ticked packs are on screen. Untick to remove.
+  const packItems = available.map((p) => ({
+    label: `${p.name}  (${p.ref})`,
+    type: 'checkbox' as const,
+    checked: activePacks.has(p.ref),
+    click: () => setPackEnabled(p.ref, !activePacks.has(p.ref)),
+  }));
+  const actionItems = world.buddies.map((b) => ({
+    label: b.name,
     submenu: [
       { label: 'Pet', click: () => b.pet(Date.now()) },
       { label: 'Dismiss bubble', click: () => b.dismissBubble() },
-      { label: 'Say hello here', click: () => world.alert({ message: 'Woof! I am right here.', target: 'here', buddy: b.id }) },
+      { label: 'Say hello here', click: () => world.alert({ message: 'I am right here.', target: 'here', buddy: b.id }) },
       { type: 'separator' as const },
-      {
-        label: 'Remove',
-        click: () => {
-          world.removeBuddy(b.id);
-          cfg.buddies = cfg.buddies.filter((e) => !(e.pack === b.pack && (e.name ?? '') === (b.name === b.manifest.name ? '' : b.name)));
-          saveConfig(cfg);
-          buildTray();
-        },
-      },
+      { label: `Remove ${b.name}`, click: () => removeBuddyAndSave(b.id) },
     ],
   }));
-  const addItems = available.map((p) => ({
-    label: `${p.name} (${p.ref}, ${p.source})`,
-    click: () => {
-      cfg.buddies.push({ pack: p.ref, enabled: true });
-      saveConfig(cfg);
-      addBuddyFromEntry({ pack: p.ref });
-      buildTray();
-    },
-  }));
+  const forBuddy = forBuddyId ? world.findBuddy(forBuddyId) : null;
   return Menu.buildFromTemplate([
-    ...(forBuddyId
+    ...(forBuddy
       ? [
-          { label: 'Pet', click: () => world.findBuddy(forBuddyId)?.pet(Date.now()) },
-          { label: 'Dismiss bubble', click: () => world.findBuddy(forBuddyId)?.dismissBubble() },
+          { label: `Pet ${forBuddy.name}`, click: () => forBuddy.pet(Date.now()) },
+          { label: 'Dismiss bubble', click: () => forBuddy.dismissBubble() },
+          { label: `Remove ${forBuddy.name}`, click: () => removeBuddyAndSave(forBuddy.id) },
           { type: 'separator' as const },
         ]
       : []),
-    { label: 'Buddies', submenu: buddyItems.length ? buddyItems : [{ label: '(none)', enabled: false }] },
-    { label: 'Add buddy', submenu: addItems.length ? addItems : [{ label: '(no packs found)', enabled: false }] },
+    { label: 'Buddies', submenu: packItems.length ? packItems : [{ label: '(no packs found)', enabled: false }] },
+    { label: 'Buddy actions', submenu: actionItems.length ? actionItems : [{ label: '(none on screen)', enabled: false }] },
+    {
+      label: 'Remove all buddies',
+      enabled: world.buddies.length > 0,
+      click: () => {
+        for (const b of [...world.buddies]) world.removeBuddy(b.id);
+        cfg.buddies = [];
+        saveConfig(cfg);
+        buildTray();
+      },
+    },
     { label: 'Install buddy folder…', click: () => void installBuddyFolder() },
     { type: 'separator' },
     { label: 'Test alert', click: () => world.alert({ message: 'This is a test alert. Everything works!', level: 'warn' }) },
@@ -239,11 +272,7 @@ app.whenReady().then(async () => {
           return { ok: false, error: (err as Error).message };
         }
       },
-      removeBuddy: (id) => {
-        const ok = world.removeBuddy(id);
-        buildTray();
-        return { ok };
-      },
+      removeBuddy: (id) => ({ ok: removeBuddyAndSave(id) }),
       reload: reloadConfig,
     });
   }

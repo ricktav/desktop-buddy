@@ -5,8 +5,8 @@ walks over to whatever window you are working in and watches it, sits down
 when you go idle, falls asleep if you stay away, and delivers alerts and
 on-screen guidance from your scripts, tools and timed reminders.
 
-Built with Electron + TypeScript for macOS. Six buddies ship in the box and
-you can add your own as folders of sprite frames.
+Built with Electron + TypeScript for macOS. Seven buddies ship in the box
+and you can add your own as folders of sprite frames.
 
 | Pack | Name | Style |
 |---|---|---|
@@ -16,9 +16,14 @@ you can add your own as folders of sprite frames.
 | `robot-pixel` | Bolt | 32×32 pixel-art robot with a blinking antenna |
 | `unicorn` | Aurora | Shaded, naturalistic unicorn with a flowing mane and glowing horn |
 | `rainbow-man` | Roy G. | Chibi man with rainbow hair and a striped suit who throws rainbows when excited |
+| `lab-doctor` | Dr. Vee | Chibi lab doctor in a white coat over scrubs, stethoscope and clipboard, blond bob with red tips |
 
-Pick them from the menu-bar paw under *Add buddy*, or `buddy add unicorn`.
-Several can be on screen at once.
+**Choosing buddies.** Click the paw in the menu bar and open *Buddies*: each
+pack is a checkbox. Tick one to put it on screen, untick it to remove it.
+Several can be on screen at once, and *Remove all buddies* clears the
+screen. Right-clicking a buddy also offers *Remove*. From a terminal:
+`buddy add unicorn`, `buddy remove <id>` (ids are listed by `buddy buddies`).
+Your selection is saved to the config file.
 
 ## Quick start
 
@@ -53,8 +58,9 @@ npm run dist       # output in release/
 | Guide arrives | Runs to the spot, floats up, points at it with a pulsing marker and a bubble, then hops back down. |
 | Reminder fires | Same as an alert, with the message you configured. |
 | You click it | Happy wiggle. Click a bubble to dismiss it. |
+| Too many on screen | Untick packs under *Buddies* in the menu, or right-click a buddy and choose *Remove*. |
 | You drag it | Dangles from the cursor; drops back to the floor of whichever screen you release it on. |
-| Right-click / menu bar paw | Menu: pet, dismiss, add or remove buddies, test alert, open config, quit. |
+| Right-click / menu bar paw | Menu: pet, dismiss, tick or untick buddies, test alert, open config, quit. |
 
 The overlay windows are click-through everywhere except on the buddy itself,
 so it never gets in the way of what is underneath.
