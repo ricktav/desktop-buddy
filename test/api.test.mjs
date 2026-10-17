@@ -8,6 +8,7 @@ const { startApi } = require('../dist/main/api.js');
 const run = promisify(execFile);
 
 const received = [];
+const { parseDurationMs } = require('../dist/main/api.js');
 const server = startApi(0, 'secret', {
   alert: (req) => { received.push(req); return { ok: true, buddy: 'b1' }; },
   state: () => ({ buddies: [] }),
@@ -15,7 +16,11 @@ const server = startApi(0, 'secret', {
   addBuddy: async (ref) => (ref === 'bad' ? { ok: false, error: 'nope' } : { ok: true, id: ref + '-1' }),
   removeBuddy: () => ({ ok: true }),
   reload: async () => {},
+  startTimer: (ms, name, buddy) => { started.push({ ms, name, buddy }); return { id: 't1', name: name ?? 'Timer 1', endsAt: Date.now() + ms, durationMs: ms, buddy }; },
+  listTimers: () => [{ id: 't1', name: 'Tea', endsAt: 0, durationMs: 60000, remaining: '0:59' }],
+  cancelTimer: (id) => id === 't1',
 });
+const started = [];
 await new Promise((r) => server.once('listening', r));
 const port = server.address().port;
 after(() => server.close());
@@ -47,4 +52,28 @@ test('validation errors and buddy management', async () => {
   await assert.rejects(cli('add', 'bad'));
   const st = await cli('state');
   assert.match(st.stdout, /"ok": true/);
+});
+
+test('timer routes and CLI', async () => {
+  started.length = 0;
+  const r = await cli('timer', '25m', 'Pomodoro', '--buddy', 'Jack');
+  assert.match(r.stdout, /"ok": true/);
+  await cli('timer', '90s');
+  assert.deepEqual(started, [{ ms: 25 * 60_000, name: 'Pomodoro', buddy: 'Jack' }, { ms: 90_000, name: undefined, buddy: undefined }]);
+  const list = await cli('timers');
+  assert.match(list.stdout, /"remaining": "0:59"/);
+  const ok = await cli('cancel', 't1');
+  assert.match(ok.stdout, /"ok": true/);
+  await assert.rejects(cli('cancel', 'nope'));
+  const bad = await fetch(`http://127.0.0.1:${port}/timer`, { method: 'POST', headers: { 'x-buddy-token': 'secret' }, body: '{"name":"x"}' });
+  assert.equal(bad.status, 400);
+});
+
+test('parseDurationMs', () => {
+  assert.equal(parseDurationMs('25m'), 25 * 60_000);
+  assert.equal(parseDurationMs('1h30m'), 90 * 60_000);
+  assert.equal(parseDurationMs('90s'), 90_000);
+  assert.equal(parseDurationMs('2'), 120_000);
+  assert.equal(parseDurationMs('2 hours 5 minutes'), 125 * 60_000);
+  assert.equal(parseDurationMs('soon'), null);
 });

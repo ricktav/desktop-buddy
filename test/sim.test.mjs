@@ -228,3 +228,29 @@ test('a trick with a line shows it in a bubble for the trick duration', () => {
   assert.notEqual(j.mood, 'trick');
   assert.equal(j.bubble, null);
 });
+
+test('a cheer alert plays the trick animation with confetti and bounces until dismissed', () => {
+  const { world, run } = makeWorld();
+  const pk = require('../buddies/pumpkin/buddy.json');
+  const j = world.addBuddy('j1', 'pumpkin', pk);
+  world.activeWindow = { app: 'Code', title: '', bounds: { x: 500, y: 100, width: 200, height: 200 }, observedAt: 0 };
+  world.alert({ message: 'Timer done!', target: 'active', duration: 0, cheer: true, buddy: 'j1' });
+  run(8);
+  assert.equal(j.mood, 'alert');
+  assert.equal(j.bubble?.text, 'Timer done!');
+  const v = j.view();
+  assert.equal(v.cheering, true);
+  assert.equal(v.animation, 'spin', 'uses the pack trick animation');
+  assert.deepEqual(v.effect, { type: 'confetti' });
+  run(30);
+  assert.equal(j.view().cheering, true, 'sticky until clicked');
+  j.dismissBubble();
+  run(0.2);
+  assert.equal(j.view().cheering, false);
+  assert.equal(j.view().effect, null);
+  // A pack without a trick cheers with its happy animation.
+  const b = world.buddies[0];
+  world.alert({ message: 'Done', target: 'here', duration: 1, cheer: true, buddy: b.id });
+  run(0.2);
+  assert.equal(b.view().animation, 'happy');
+});

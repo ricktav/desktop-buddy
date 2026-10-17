@@ -1,8 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AlertRequest } from '../shared/types';
+import type { AlertRequest, TimerInfo } from '../shared/types';
 
 export interface ApiHandlers {
   alert(req: AlertRequest): { ok: true; buddy: string } | { ok: false; error: string };
+  startTimer(durationMs: number, name?: string, buddy?: string): TimerInfo;
+  listTimers(): Array<TimerInfo & { remaining: string }>;
+  cancelTimer(id: string): boolean;
   state(): unknown;
   listBuddies(): unknown;
   addBuddy(ref: string): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
@@ -19,6 +22,9 @@ export interface ApiHandlers {
  *   POST /buddies {pack}
  *   DELETE /buddies/:id
  *   POST /reload
+ *   POST /timer    {minutes | seconds | duration:"25m", name?, buddy?}
+ *   GET  /timers
+ *   DELETE /timers/:id
  */
 export function startApi(port: number, token: string | undefined, h: ApiHandlers): Server {
   const server = createServer(async (req, res) => {
@@ -71,6 +77,22 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string |
     const result = h.alert(alert);
     return send(res, result.ok ? 200 : 404, result);
   }
+  if (method === 'POST' && (path === '/timer' || path === '/timers')) {
+    const body = await readJson(req);
+    let ms: number | null = null;
+    if (typeof body.minutes === 'number') ms = body.minutes * 60_000;
+    else if (typeof body.seconds === 'number') ms = body.seconds * 1000;
+    else if (typeof body.duration === 'string') ms = parseDurationMs(body.duration);
+    if (!ms || ms <= 0) return send(res, 400, { ok: false, error: 'give "minutes", "seconds" or "duration" like "25m"' });
+    const timer = h.startTimer(ms, typeof body.name === 'string' ? body.name : undefined, typeof body.buddy === 'string' ? body.buddy : undefined);
+    return send(res, 200, { ok: true, timer });
+  }
+  if (method === 'GET' && path === '/timers') return send(res, 200, { ok: true, timers: h.listTimers() });
+  const delTimer = path.match(/^\/timers\/([^/]+)$/);
+  if (method === 'DELETE' && delTimer) {
+    const ok = h.cancelTimer(decodeURIComponent(delTimer[1]));
+    return send(res, ok ? 200 : 404, { ok, ...(ok ? {} : { error: 'no such timer' }) });
+  }
   if (method === 'POST' && path === '/buddies') {
     const body = await readJson(req);
     if (typeof body.pack !== 'string') return send(res, 400, { ok: false, error: '"pack" is required' });
@@ -80,6 +102,22 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string |
   const del = path.match(/^\/buddies\/([^/]+)$/);
   if (method === 'DELETE' && del) return send(res, 200, h.removeBuddy(decodeURIComponent(del[1])));
   send(res, 404, { ok: false, error: `no route ${method} ${path}` });
+}
+
+/** "25m", "1h30m", "90s", "2" (minutes) → ms. */
+export function parseDurationMs(text: string): number | null {
+  const t = text.trim().toLowerCase();
+  if (/^\d+(\.\d+)?$/.test(t)) return Number(t) * 60_000;
+  let total = 0, matched = false;
+  const re = /(\d+(?:\.\d+)?)\s*(h|hr|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t))) {
+    matched = true;
+    const n = Number(m[1]);
+    const u = m[2][0];
+    total += u === 'h' ? n * 3_600_000 : u === 'm' ? n * 60_000 : n * 1000;
+  }
+  return matched ? total : null;
 }
 
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {

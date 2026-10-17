@@ -8,6 +8,8 @@ import { startApi } from './api';
 import { configPath, loadConfig, saveConfig, userBuddiesDir } from './config';
 import { installPackProtocol, listAvailablePacks, loadedPackManifests, loadPack, registerPackScheme } from './packs';
 import { ReminderScheduler } from './reminders';
+import { TimerManager, timerDoneMessage } from './timers';
+import { NotificationService, announcement } from './notifications';
 import { allDisplays, OverlayWindows } from './windows';
 
 const DEV = process.argv.includes('--dev');
@@ -29,6 +31,29 @@ let draggingId: string | null = null;
 let buddySeq = 0;
 const tracker = new ActiveWindowTracker(['Electron', 'Desktop Buddy']);
 const reminders = new ReminderScheduler((req) => world.alert(req));
+const timers = new TimerManager((t) => {
+  console.log(`timer done: ${t.name}`);
+  // Sticky bubble (until clicked) so the celebration cannot be missed.
+  world.alert({ message: timerDoneMessage(t), level: 'warn', target: 'active', duration: 0, buddy: t.buddy, cheer: true });
+  buildTray();
+});
+let notifications: NotificationService | null = null;
+
+function startNotifications(): void {
+  notifications?.stop();
+  notifications = new NotificationService(cfg.notifications, (n) => {
+    const text = announcement(n, cfg.notifications.showBody);
+    console.log(`notification: ${text}`);
+    world.alert({ message: text, level: 'info', target: 'here', duration: cfg.notifications.bubbleSeconds });
+  });
+  notifications.start();
+}
+
+function startTimerFromMenu(ms: number, name: string): void {
+  const t = timers.start(ms, { name });
+  world.alert({ message: `⏱ ${t.name}: ${timers.remainingLabel(t)} on the clock.`, target: 'here', duration: 4 });
+  buildTray();
+}
 
 function simConfig(c: AppConfig) {
   return { idleSitAfter: c.idleSitAfter, idleSleepAfter: c.idleSleepAfter, walkSpeed: c.walkSpeed, bubbleSeconds: c.bubbleSeconds };
@@ -108,6 +133,7 @@ async function reloadConfig(): Promise<void> {
   loadBuddies();
   reminders.load(cfg.reminders);
   tracker.start(cfg.activeWindowPoll);
+  startNotifications();
   buildTray();
 }
 
@@ -137,6 +163,37 @@ function buildMenu(forBuddyId?: string): Menu {
     ],
   }));
   const forBuddy = forBuddyId ? world.findBuddy(forBuddyId) : null;
+  const running = timers.list();
+  const timerItems = [
+    ...running.map((t) => ({
+      label: `⏱ ${t.name} — ${timers.remainingLabel(t)} left`,
+      submenu: [{ label: 'Cancel', click: () => { timers.cancel(t.id); buildTray(); } }],
+    })),
+    ...(running.length ? [{ type: 'separator' as const }] : []),
+    ...[1, 5, 10, 15, 25, 45, 60].map((m) => ({ label: `Start ${m} min timer`, click: () => startTimerFromMenu(m * 60_000, `${m} min timer`) })),
+    { type: 'separator' as const },
+    { label: 'Pomodoro (25 min)', click: () => startTimerFromMenu(25 * 60_000, 'Pomodoro') },
+    { label: 'Custom… (use: buddy timer 12m Name)', enabled: false },
+  ];
+  const nstat = notifications?.status();
+  const notifItems = [
+    {
+      label: 'Announce notifications',
+      type: 'checkbox' as const,
+      checked: cfg.notifications.enabled,
+      click: () => { cfg.notifications.enabled = !cfg.notifications.enabled; saveConfig(cfg); startNotifications(); buildTray(); },
+    },
+    {
+      label: 'Show message preview',
+      type: 'checkbox' as const,
+      checked: cfg.notifications.showBody,
+      click: () => { cfg.notifications.showBody = !cfg.notifications.showBody; saveConfig(cfg); buildTray(); },
+    },
+    { type: 'separator' as const },
+    { label: `Notification Center: ${nstat?.notificationCenter ? 'reading' : 'unavailable (needs Full Disk Access)'}`, enabled: false },
+    { label: `Dock badges: ${nstat?.dockBadge ? 'watching ' + cfg.notifications.badgeApps.join(', ') : 'unavailable'}`, enabled: false },
+    { label: `Apps: ${cfg.notifications.apps.map((a) => a.label).join(', ') || '(none, edit config)'}`, enabled: false },
+  ];
   return Menu.buildFromTemplate([
     ...(forBuddy
       ? [
@@ -173,11 +230,15 @@ function buildMenu(forBuddyId?: string): Menu {
     },
     { label: 'Install buddy folder…', click: () => void installBuddyFolder() },
     { type: 'separator' },
+    { label: running.length ? `Timers (${running.length} running)` : 'Timers', submenu: timerItems },
+    { label: 'Notifications', submenu: notifItems },
+    { type: 'separator' },
     { label: 'Test alert', click: () => world.alert({ message: 'This is a test alert. Everything works!', level: 'warn' }) },
     {
       label: 'Test guide (point at mouse)',
       click: () => world.alert({ message: 'Look here!', target: 'mouse', duration: 8 }),
     },
+    { label: 'Test cheer', click: () => world.alert({ message: '🎉 Hooray! (test)', level: 'warn', target: 'active', duration: 0, cheer: true }) },
     { type: 'separator' },
     { label: 'Open config file', click: () => void shell.openPath(configPath()) },
     { label: 'Open buddies folder', click: () => void shell.openPath(userBuddiesDir()) },
@@ -279,8 +340,11 @@ app.whenReady().then(async () => {
   };
   tracker.start(cfg.activeWindowPoll);
   reminders.load(cfg.reminders);
+  startNotifications();
   wireIpc();
   buildTray();
+  // Keep the timer countdowns in the tray menu fresh.
+  setInterval(() => { if (timers.list().length) buildTray(); }, 15_000);
 
   if (cfg.api.enabled) {
     startApi(cfg.api.port, cfg.api.token, {
@@ -300,6 +364,18 @@ app.whenReady().then(async () => {
       },
       removeBuddy: (id) => ({ ok: removeBuddyAndSave(id) }),
       reload: reloadConfig,
+      startTimer: (ms, name, buddy) => {
+        const t = timers.start(ms, { name, buddy });
+        world.alert({ message: `⏱ ${t.name}: ${timers.remainingLabel(t)} on the clock.`, target: 'here', duration: 4, buddy });
+        buildTray();
+        return t;
+      },
+      listTimers: () => timers.list().map((t) => ({ ...t, remaining: timers.remainingLabel(t) })),
+      cancelTimer: (id) => {
+        const ok = timers.cancel(id);
+        if (ok) buildTray();
+        return ok;
+      },
     });
   }
 
@@ -347,5 +423,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   tracker.stop();
   reminders.clear();
+  timers.cancelAll();
+  notifications?.stop();
   overlays?.destroyAll();
 });

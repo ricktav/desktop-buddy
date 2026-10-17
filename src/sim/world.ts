@@ -80,6 +80,7 @@ export class World {
       level: req.level ?? 'info',
       target,
       durationMs: seconds <= 0 ? null : seconds * 1000,
+      cheer: req.cheer === true,
     });
     return b;
   }

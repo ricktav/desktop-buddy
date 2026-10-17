@@ -50,6 +50,20 @@ To build a `.app`/`.dmg`:
 npm run dist       # output in release/
 ```
 
+### Run in the background and start at login
+
+```bash
+npm run build
+node bin/buddy.js service install     # or `buddy service install` after `npm link`
+```
+
+This registers a launchd user agent that starts Desktop Buddy at login with
+no terminal window and restarts it if it crashes. `buddy service status`,
+`buddy service restart` (after a `git pull` and `npm run build`) and
+`buddy service uninstall` manage it. Logs go to
+`~/Library/Logs/desktop-buddy.log`. Alternatively build the `.app` with
+`npm run dist` and add it to *System Settings → General → Login Items*.
+
 ## What the buddy does
 
 | Situation | Behaviour |
@@ -62,6 +76,8 @@ npm run dist       # output in release/
 | Guide arrives | Runs to the spot, floats up, points at it with a pulsing marker and a bubble, then hops back down. |
 | Reminder fires | Same as an alert, with the message you configured. |
 | You click it | Happy wiggle. Click a bubble to dismiss it. |
+| A timer finishes | The buddy runs to your active window, bounces, throws confetti and holds a bubble until you click it. |
+| A WhatsApp message arrives | The buddy announces "WhatsApp message from …" with a short preview (see *Notifications*). |
 | You double-click it | Packs can define a trick. Aurora the unicorn rears up and spells L I L Y along a rainbow; Jack the pumpkin leaps into a spin, shouts BOO! and bats circle him. |
 | Too many on screen | Untick packs under *Buddies* in the menu, or right-click a buddy and choose *Remove*. |
 | You drag it | Dangles from the cursor; drops back to the floor of whichever screen you release it on. |
@@ -110,6 +126,59 @@ curl -X POST localhost:47821/guide -d '{"message":"Here","x":640,"y":320}'
 Set `api.token` in the config to require an `x-buddy-token` header (the CLI
 reads `BUDDY_TOKEN`). The server only listens on localhost.
 
+## Timers
+
+Start a countdown and the buddy celebrates when it ends: it runs to your
+active window, does its trick or happy dance with confetti, and keeps a
+bubble up until you click it, so you cannot miss it.
+
+```bash
+buddy timer 25m Pomodoro            # 25 minutes
+buddy timer 1h30m Laundry
+buddy timer 90s Eggs --buddy Jack   # pick who cheers
+buddy timers                        # running timers with time left
+buddy cancel t3
+```
+
+The menu-bar paw has a *Timers* submenu with presets and the running
+countdowns (each with *Cancel*). Over HTTP: `POST /timer` with
+`{"duration":"25m","name":"Pomodoro"}` (or `minutes` / `seconds`),
+`GET /timers`, `DELETE /timers/:id`.
+
+## Notifications (WhatsApp and other apps)
+
+The buddy can announce incoming messages. Two sources are used on macOS:
+
+1. **Notification Center** gives the sender and a preview. The buddy reads
+   macOS's notification database, which needs **Full Disk Access** for the
+   process that runs the buddy: *System Settings → Privacy & Security → Full
+   Disk Access*, then add *Terminal* (or iTerm) when you use `npm start`, or
+   the Electron binary printed by `buddy service install` when running as a
+   service. WhatsApp must be allowed to post notifications (its own setting
+   and macOS's). Only apps listed in the config are read; nothing else is
+   looked at or stored.
+2. **Dock badge** fallback: when Full Disk Access is missing, the buddy
+   watches the unread badge on the WhatsApp Dock icon (Accessibility
+   permission, already granted for window tracking) and says
+   "New WhatsApp message" or "3 unread messages" when it grows.
+
+The *Notifications* submenu in the menu bar toggles announcements and the
+message preview, and shows which source is active. Config:
+
+```jsonc
+"notifications": {
+  "enabled": true,
+  "apps": [{ "bundleId": "net.whatsapp.WhatsApp", "label": "WhatsApp" }],
+  "showBody": true,          // false = sender only
+  "badgeApps": ["WhatsApp"], // Dock icon names to watch as fallback
+  "pollSeconds": 3,
+  "bubbleSeconds": 20
+}
+```
+
+Add more apps with their bundle identifier (for an app in /Applications:
+`osascript -e 'id of app "Slack"'`) and Dock name.
+
 ## Configuration
 
 `~/Library/Application Support/desktop-buddy/config.json` (open it from the
@@ -127,6 +196,7 @@ menu bar: *Open config file*; apply with *Reload config* or `buddy reload`).
   "activeWindowPoll": 1.5,     // seconds between frontmost-window checks
   "bubbleSeconds": 12,         // default bubble lifetime
   "api": { "enabled": true, "port": 47821, "token": "" },
+  "notifications": { "enabled": true, "apps": [...], "showBody": true, "badgeApps": ["WhatsApp"], "pollSeconds": 3, "bubbleSeconds": 20 },
   "reminders": [
     { "message": "Time to stretch!", "every": "45m", "target": "here" },
     { "message": "Stand-up", "at": "09:55", "days": [1, 2, 3, 4, 5], "level": "warn" }

@@ -114,6 +114,34 @@ function batSwarm(count: number, w: number, h: number): SVGSVGElement {
   return svg;
 }
 
+/** Confetti bursting up and raining down around the buddy. */
+function confetti(w: number, h: number): SVGSVGElement {
+  const W = w * 3, H = h * 2.4;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'effect');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', String(W));
+  svg.setAttribute('height', String(H));
+  svg.style.left = `${(w - W) / 2}px`;
+  svg.style.top = `${h - H}px`;
+  const parts: string[] = [];
+  const n = 36;
+  for (let i = 0; i < n; i++) {
+    const x = (W * (i + 0.5)) / n + (((i * 37) % 11) - 5) * 3;
+    const c = RAINBOW[i % RAINBOW.length];
+    const size = 4 + ((i * 7) % 5);
+    const delay = ((i * 53) % 9) * 120;
+    const dur = 1800 + ((i * 29) % 7) * 160;
+    const shape = i % 3 === 0 ? `<circle r="${size / 2}"/>` : i % 3 === 1 ? `<rect x="${-size / 2}" y="${-size / 3}" width="${size}" height="${size / 1.5}"/>` : `<path d="M 0 ${-size / 2} L ${size / 2} ${size / 2} L ${-size / 2} ${size / 2} Z"/>`;
+    parts.push(
+      `<g class="piece" style="animation-duration:${dur}ms; animation-delay:${delay}ms; --h:${(H * 0.9).toFixed(0)}px" transform="translate(${x.toFixed(1)} ${(H * 0.85).toFixed(1)})" fill="${c}">` +
+        `<g class="tumble" style="animation-delay:${delay}ms">${shape}</g></g>`,
+    );
+  }
+  svg.innerHTML = parts.join('');
+  return svg;
+}
+
 function createEl(b: BuddyView): BuddyEl {
   const root = document.createElement('div');
   root.className = 'buddy';
@@ -171,6 +199,7 @@ function render(snapshot: WorldSnapshot): void {
     el.root.style.width = `${w}px`;
     el.root.style.height = `${h}px`;
     el.root.classList.toggle('dragging', b.mood === 'drag');
+    el.img.classList.toggle('cheer', b.cheering);
 
     // Speech bubble.
     const text = b.bubble?.text ?? null;
@@ -201,6 +230,7 @@ function render(snapshot: WorldSnapshot): void {
       el.effect = null;
       if (b.effect?.type === 'arc-letters') el.effect = arcLetters(b.effect.text, w, h);
       else if (b.effect?.type === 'bats') el.effect = batSwarm(b.effect.count ?? 5, w, h);
+      else if (b.effect?.type === 'confetti') el.effect = confetti(w, h);
       if (el.effect) el.root.append(el.effect);
       el.effectKey = effectKey;
     }

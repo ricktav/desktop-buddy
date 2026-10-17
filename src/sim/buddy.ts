@@ -28,6 +28,7 @@ export interface PendingAlert {
   /** Resolved global target. */
   target: { kind: 'floor'; x: number; displayId: number } | { kind: 'point'; x: number; y: number; displayId: number } | { kind: 'here' };
   durationMs: number | null;
+  cheer?: boolean;
 }
 
 const EDGE_MARGIN = 40;
@@ -86,6 +87,7 @@ export class Buddy {
   bubble: BubbleState | null = null;
   pointer: { x: number; y: number } | null = null;
   effect: TrickEffect | null = null;
+  cheering = false;
 
   private animTime = 0;
   private targetX: number | null = null;
@@ -407,7 +409,7 @@ export class Buddy {
         break;
       }
       case 'show':
-        this.animation = this.mood === 'guide' ? 'point' : 'alert';
+        this.animation = this.cheering ? this.cheerAnimation() : this.mood === 'guide' ? 'point' : 'alert';
         if (!this.bubble) {
           // Bubble expired or dismissed.
           if (this.mood === 'guide') {
@@ -431,6 +433,17 @@ export class Buddy {
       level: alert.level,
       until: alert.durationMs === null ? null : now + alert.durationMs,
     };
+    if (alert.cheer) {
+      this.cheering = true;
+      this.effect = { type: 'confetti' };
+      this.animTime = 0;
+    }
+  }
+
+  /** Animation used while cheering: the pack's trick animation, else happy. */
+  private cheerAnimation(): AnimationName {
+    const t = this.manifest.doubleClick?.animation;
+    return t && this.manifest.animations[t] ? t : 'happy';
   }
 
   private finishAlert(): void {
@@ -438,6 +451,10 @@ export class Buddy {
     this.alertPhase = null;
     this.pointer = null;
     this.targetY = null;
+    if (this.cheering) {
+      this.cheering = false;
+      this.effect = null;
+    }
     this.setMood('watch');
     this.timer = 4;
   }
@@ -519,6 +536,7 @@ export class Buddy {
       bubble: this.bubble,
       pointer: this.pointer,
       effect: this.effect,
+      cheering: this.cheering,
     };
   }
 }

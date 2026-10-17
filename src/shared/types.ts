@@ -60,6 +60,9 @@ export type TrickEffect =
       type: 'bats';
       /** How many bats circle the buddy. Default 5. */
       count?: number;
+    }
+  | {
+      type: 'confetti';
     };
 
 /** What a buddy does when double-clicked. */
@@ -122,6 +125,8 @@ export interface BuddyView {
   pointer: { x: number; y: number } | null;
   /** Active trick effect, if any. */
   effect: TrickEffect | null;
+  /** True while celebrating (timer done): the renderer bounces the sprite. */
+  cheering: boolean;
 }
 
 export interface WorldSnapshot {
@@ -146,6 +151,39 @@ export interface AlertRequest {
   duration?: number;
   /** Buddy id or name. Default: the first buddy. */
   buddy?: string;
+  /** Celebrate: play the buddy's trick or happy animation with confetti while the bubble shows. */
+  cheer?: boolean;
+}
+
+export interface TimerInfo {
+  id: string;
+  name: string;
+  /** Epoch ms when it fires. */
+  endsAt: number;
+  /** Total duration in ms. */
+  durationMs: number;
+  buddy?: string;
+}
+
+export interface WatchedApp {
+  /** macOS bundle identifier as stored by Notification Center, e.g. net.whatsapp.WhatsApp. */
+  bundleId: string;
+  /** Friendly name the buddy uses. */
+  label: string;
+}
+
+export interface NotificationsConfig {
+  enabled: boolean;
+  /** Apps whose Notification Center entries are announced (needs Full Disk Access). */
+  apps: WatchedApp[];
+  /** Include a preview of the message text, not only the sender. */
+  showBody: boolean;
+  /** Dock app names whose unread badge is watched as a fallback (needs Accessibility). */
+  badgeApps: string[];
+  /** Seconds between checks. */
+  pollSeconds: number;
+  /** Seconds the announcement bubble stays. */
+  bubbleSeconds: number;
 }
 
 export interface ReminderConfig {
@@ -188,6 +226,7 @@ export interface AppConfig {
     token?: string;
   };
   reminders: ReminderConfig[];
+  notifications: NotificationsConfig;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -201,4 +240,12 @@ export const DEFAULT_CONFIG: AppConfig = {
   reminders: [
     { message: 'Time to stretch and look away from the screen for a bit!', every: '45m', target: 'here' },
   ],
+  notifications: {
+    enabled: true,
+    apps: [{ bundleId: 'net.whatsapp.WhatsApp', label: 'WhatsApp' }],
+    showBody: true,
+    badgeApps: ['WhatsApp'],
+    pollSeconds: 3,
+    bubbleSeconds: 20,
+  },
 };
