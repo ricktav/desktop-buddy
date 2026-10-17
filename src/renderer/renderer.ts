@@ -84,6 +84,36 @@ function registerPacks(packs: Record<string, BuddyManifest>): void {
   }
 }
 
+/** A flock of bats circling the buddy. */
+function batSwarm(count: number, w: number, h: number): SVGSVGElement {
+  const W = w * 3, H = h * 2.2;
+  const cx = W / 2, cy = H * 0.62;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'effect');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', String(W));
+  svg.setAttribute('height', String(H));
+  svg.style.left = `${(w - W) / 2}px`;
+  svg.style.top = `${h - H + h * 0.1}px`;
+  const bat = `<path class="wing" d="M -2 0 C -8 -8 -15 -8 -19 -3 C -17 -1 -15 0 -13 3 C -12 1 -10 1 -9 4 C -8 2 -6 3 -3 6 Z"/>` +
+    `<path class="wing" d="M 2 0 C 8 -8 15 -8 19 -3 C 17 -1 15 0 13 3 C 12 1 10 1 9 4 C 8 2 6 3 3 6 Z"/>` +
+    `<ellipse cx="0" cy="2" rx="3.2" ry="5.5"/><circle cx="0" cy="-4" r="3.6"/>` +
+    `<path d="M -3 -5 l -1.5 -4.5 l 3.5 2 z M 3 -5 l 1.5 -4.5 l -3.5 2 z"/>` +
+    `<circle cx="-1.4" cy="-4.4" r="0.9" fill="#9BF0FF"/><circle cx="1.4" cy="-4.4" r="0.9" fill="#9BF0FF"/>`;
+  const parts: string[] = [];
+  const rx = Math.max(w * 1.1, 70), ry = Math.max(h * 0.55, 36);
+  for (let i = 0; i < count; i++) {
+    const delay = -(i * 3000) / count;
+    const s = 1.1 + (i % 3) * 0.25;
+    parts.push(
+      `<g class="orbit" style="animation-delay:${delay}ms; --rx:${rx}px; --ry:${ry}px" transform="translate(${cx} ${cy})">` +
+        `<g class="bat" style="animation-delay:${delay}ms" transform="scale(${s})">${bat}</g></g>`,
+    );
+  }
+  svg.innerHTML = parts.join('');
+  return svg;
+}
+
 function createEl(b: BuddyView): BuddyEl {
   const root = document.createElement('div');
   root.className = 'buddy';
@@ -165,14 +195,13 @@ function render(snapshot: WorldSnapshot): void {
     }
 
     // Trick effect drawn around the buddy.
-    const effectKey = b.effect ? `${b.effect.type}:${b.effect.text}:${Math.round(w)}` : null;
+    const effectKey = b.effect ? `${JSON.stringify(b.effect)}:${Math.round(w)}` : null;
     if (effectKey !== el.effectKey) {
       el.effect?.remove();
       el.effect = null;
-      if (b.effect?.type === 'arc-letters') {
-        el.effect = arcLetters(b.effect.text, w, h);
-        el.root.append(el.effect);
-      }
+      if (b.effect?.type === 'arc-letters') el.effect = arcLetters(b.effect.text, w, h);
+      else if (b.effect?.type === 'bats') el.effect = batSwarm(b.effect.count ?? 5, w, h);
+      if (el.effect) el.root.append(el.effect);
       el.effectKey = effectKey;
     }
 

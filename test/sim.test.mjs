@@ -213,3 +213,18 @@ test('double-click trick plays the pack animation with its effect, then returns 
   run(0.1);
   assert.notEqual(b.mood, 'trick');
 });
+
+test('a trick with a line shows it in a bubble for the trick duration', () => {
+  const { world, run, clock } = makeWorld();
+  const pk = require('../buddies/pumpkin/buddy.json');
+  const j = world.addBuddy('j1', 'pumpkin', pk);
+  j.trick(clock());
+  run(0.1);
+  assert.equal(j.mood, 'trick');
+  assert.equal(j.animation, 'spin');
+  assert.equal(j.bubble?.text, 'BOO!');
+  assert.deepEqual(j.view().effect, { type: 'bats', count: 5 });
+  run(4);
+  assert.notEqual(j.mood, 'trick');
+  assert.equal(j.bubble, null);
+});

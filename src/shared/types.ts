@@ -38,6 +38,7 @@ export type AnimationName =
   | 'happy'
   | 'drag'
   | 'rear'
+  | 'spin'
   | 'trick';
 
 export interface AnimationDef {
@@ -49,11 +50,17 @@ export interface AnimationDef {
 
 /** Contents of a buddy folder's buddy.json. */
 /** A visual effect the renderer draws around the buddy during a trick. */
-export interface TrickEffect {
-  type: 'arc-letters';
-  /** Letters shown along a rainbow arc above the buddy. */
-  text: string;
-}
+export type TrickEffect =
+  | {
+      type: 'arc-letters';
+      /** Letters shown along a rainbow arc above the buddy. */
+      text: string;
+    }
+  | {
+      type: 'bats';
+      /** How many bats circle the buddy. Default 5. */
+      count?: number;
+    };
 
 /** What a buddy does when double-clicked. */
 export interface TrickDef {

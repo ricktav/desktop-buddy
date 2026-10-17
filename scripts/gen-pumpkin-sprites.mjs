@@ -78,20 +78,24 @@ function vineArm(x, y, ex, ey) {
     `<path d="M ${ex} ${ey} c 6 -8 14 -4 10 4 c -4 -3 -8 -2 -10 -4 z" fill="#7FB33A" ${stroke(1.3, STEM_DK)}/>`;
 }
 
-function pose({ bob = 0, squash = 0, phase = null, lit = true, eyes = 'open', mouth = 'grin', flame = 0, arm = null, dangle = 0, extra = '' } = {}) {
+function pose({ bob = 0, squash = 0, phase = null, lit = true, eyes = 'open', mouth = 'grin', flame = 0, arm = null, dangle = 0, extra = '', spin = 0 } = {}) {
   const rx = 40 + squash * 6, ry = 32 - squash * 6;
   const cy = FLOOR - 14 - ry + bob;
   const cx = 64;
   const sw = phase === null ? [0, 0] : [[-5, 5], [0, 0], [5, -5], [0, 0]][phase % 4];
   const lift = phase === null ? [0, 0] : [[4, 0], [0, 0], [0, 4], [0, 0]][phase % 4];
-  return svgWrap(
-    leg(cx - 16, cy + ry - 8, sw[0], { lift: lift[0], dangle }) +
-    leg(cx + 16, cy + ry - 8, sw[1], { lift: lift[1], dangle }) +
+  const legs = spin
+    // Tucked-in legs while tumbling through the air.
+    ? leg(cx - 14, cy + ry - 10, -6, { lift: FLOOR - (cy + ry + 6) }) + leg(cx + 14, cy + ry - 10, 6, { lift: FLOOR - (cy + ry + 6) })
+    : leg(cx - 16, cy + ry - 8, sw[0], { lift: lift[0], dangle }) + leg(cx + 16, cy + ry - 8, sw[1], { lift: lift[1], dangle });
+  const figure =
+    legs +
     pumpkinBody(cx, cy, rx, ry) +
     carved(cx, cy + 2, rx, ry, { lit, eyes, mouth }) +
     stem(cx, cy - ry + 2, { flame }) +
-    (arm ? vineArm(cx + rx - 6, cy - 4, arm[0], arm[1]) : '') +
-    extra,
+    (arm ? vineArm(cx + rx - 6, cy - 4, arm[0], arm[1]) : '');
+  return svgWrap(
+    (spin ? `<g transform="rotate(${spin} ${cx} ${cy})">${figure}</g>` : figure) + extra,
     { defs: DEFS },
   );
 }
@@ -124,9 +128,17 @@ const anims = {
     ],
   },
   drag: { fps: 2, frames: [pose({ eyes: 'worried', mouth: 'o', dangle: 3, bob: -6 }), pose({ eyes: 'worried', mouth: 'o', dangle: 2, bob: -8 })] },
+  // Double-click trick: leap up and tumble head over heels with the candle roaring.
+  spin: {
+    fps: 12,
+    frames: [0, 1, 2, 3, 4, 5, 6, 7].map((i) =>
+      pose({ spin: i * 45, bob: -22 - Math.sin((i / 8) * Math.PI) * 10, eyes: 'happy', mouth: 'big', flame: 1.2 })),
+  },
 };
 
 writePack('pumpkin', {
   name: 'Jack',
   petLines: ['Boo!', '*flickers*', 'Trick or treat?', '*spooky giggle*', 'Happy Halloween!'],
+  // Double-click: leaps into a spin while bats circle him.
+  doubleClick: { animation: 'spin', seconds: 3.5, say: 'BOO!', effect: { type: 'bats', count: 5 } },
 }, anims);

@@ -43,3 +43,11 @@ test('unicorn double-click trick rears and spells LILY', () => {
   assert.equal(m.doubleClick.animation, 'rear');
   assert.deepEqual(m.doubleClick.effect, { type: 'arc-letters', text: 'LILY' });
 });
+
+test('pumpkin double-click trick spins with bats', () => {
+  const m = JSON.parse(readFileSync(join(root, 'pumpkin', 'buddy.json'), 'utf8'));
+  assert.equal(m.doubleClick.animation, 'spin');
+  assert.equal(m.doubleClick.say, 'BOO!');
+  assert.deepEqual(m.doubleClick.effect, { type: 'bats', count: 5 });
+  assert.equal(m.animations.spin.frames.length, 8);
+});

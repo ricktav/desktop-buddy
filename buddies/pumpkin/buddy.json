@@ -12,6 +12,15 @@
     "*spooky giggle*",
     "Happy Halloween!"
   ],
+  "doubleClick": {
+    "animation": "spin",
+    "seconds": 3.5,
+    "say": "BOO!",
+    "effect": {
+      "type": "bats",
+      "count": 5
+    }
+  },
   "animations": {
     "idle": {
       "frames": [
@@ -83,6 +92,19 @@
         "drag-1.svg"
       ],
       "fps": 2
+    },
+    "spin": {
+      "frames": [
+        "spin-0.svg",
+        "spin-1.svg",
+        "spin-2.svg",
+        "spin-3.svg",
+        "spin-4.svg",
+        "spin-5.svg",
+        "spin-6.svg",
+        "spin-7.svg"
+      ],
+      "fps": 12
     }
   }
 }

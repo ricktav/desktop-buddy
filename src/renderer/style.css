@@ -141,3 +141,27 @@ html, body {
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes popLetter { from { opacity: 0; scale: 0.2; } to { opacity: 1; scale: 1; } }
 @keyframes floatLetter { from { translate: 0 0; } to { translate: 0 -4px; } }
+
+.effect .orbit {
+  animation: orbit 3s linear infinite;
+}
+.effect .bat {
+  fill: #2A2A36;
+  stroke: #111;
+  stroke-width: 0.8;
+  stroke-linejoin: round;
+}
+.effect .bat .wing {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: flap 260ms ease-in-out infinite alternate;
+}
+@keyframes orbit {
+  /* An ellipse: cos for x, sin for y, drawn with a bit of lift halfway round. */
+  0%   { translate: calc(var(--rx) * 1) 0; }
+  25%  { translate: 0 calc(var(--ry) * -1); }
+  50%  { translate: calc(var(--rx) * -1) 0; }
+  75%  { translate: 0 calc(var(--ry) * 1); }
+  100% { translate: calc(var(--rx) * 1) 0; }
+}
+@keyframes flap { from { scale: 1 1; } to { scale: 1 0.35; } }
