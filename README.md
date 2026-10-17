@@ -162,12 +162,16 @@ The buddy can announce incoming messages. Two sources are used on macOS:
 
 1. **Notification Center** gives the sender and a preview. The buddy reads
    macOS's notification database, which needs **Full Disk Access** for the
-   process that runs the buddy: *System Settings → Privacy & Security → Full
-   Disk Access*, then add *Terminal* (or iTerm) when you use `npm start`, or
-   the Electron binary printed by `buddy service install` when running as a
-   service. WhatsApp must be allowed to post notifications (its own setting
-   and macOS's). Only apps listed in the config are read; nothing else is
-   looked at or stored.
+   process that runs the buddy. In the paw menu open *Notifications → Open
+   Full Disk Access settings…*, click **+**, and add the app that
+   *Reveal the app to add there* shows in Finder (`Electron.app` inside the
+   project's `node_modules` when running as a service; *Terminal* or iTerm
+   when you use `npm start`). Press Cmd+Shift+G in the file dialog to paste
+   a path. No restart is needed: the buddy retries every minute and logs
+   when it starts reading. WhatsApp must be allowed to post notifications
+   (its own setting and macOS's). Only apps listed in the config are read;
+   nothing else is looked at or stored. Note that `buddy diagnose` runs from
+   Terminal, so it needs Terminal to have Full Disk Access too.
 2. **Dock badge** fallback: when Full Disk Access is missing, the buddy
    watches the unread badge on the WhatsApp Dock icon (Accessibility
    permission, already granted for window tracking) and says

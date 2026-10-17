@@ -206,6 +206,18 @@ function buildMenu(forBuddyId?: string): Menu {
     },
     { type: 'separator' as const },
     { label: `Notification Center: ${nstat?.notificationCenter ? 'reading' : 'unavailable (needs Full Disk Access)'}`, enabled: false },
+    ...(nstat?.notificationCenter
+      ? []
+      : [
+          {
+            label: 'Open Full Disk Access settings…',
+            click: () => void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'),
+          },
+          {
+            label: 'Reveal the app to add there (Electron.app)…',
+            click: () => shell.showItemInFolder(appBundlePath()),
+          },
+        ]),
     { label: `Dock badges: ${nstat?.dockBadge ? 'watching ' + cfg.notifications.badgeApps.join(', ') : 'unavailable'}`, enabled: false },
     { label: `Apps: ${cfg.notifications.apps.map((a) => a.label).join(', ') || '(none, edit config)'}`, enabled: false },
   ];
@@ -291,6 +303,12 @@ async function installBuddyFolder(): Promise<void> {
     dialog.showErrorBox('Could not load buddy', (err as Error).message);
   }
   buildTray();
+}
+
+/** The .app bundle that runs us (for granting macOS permissions). */
+function appBundlePath(): string {
+  const i = process.execPath.indexOf('.app/');
+  return i >= 0 ? process.execPath.slice(0, i + 4) : process.execPath;
 }
 
 function trayIcon() {

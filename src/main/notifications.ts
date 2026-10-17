@@ -85,6 +85,9 @@ interface NcRow {
 export class NotificationCenterWatcher {
   private lastId: number | null = null;
   private failed = false;
+  /** After a failure (usually missing Full Disk Access) retry at this time. */
+  private retryAt = 0;
+  private warned = false;
 
   constructor(private readonly apps: WatchedApp[]) {}
 
@@ -93,11 +96,17 @@ export class NotificationCenterWatcher {
   }
 
   async poll(): Promise<IncomingNotification[]> {
-    if (!this.available) return [];
+    if (process.platform !== 'darwin' || this.apps.length === 0) return [];
+    if (this.failed) {
+      if (Date.now() < this.retryAt) return [];
+      this.failed = false; // try again; permission may have been granted meanwhile
+      this.lastId = null;
+    }
     try {
       if (this.lastId === null) {
         const out = await run('sqlite3', ['-readonly', NC_DB_PATH, 'SELECT IFNULL(MAX(rec_id), 0) FROM record;']);
         this.lastId = Number(out.trim()) || 0;
+        if (this.warned) console.log('Notification Center watcher is reading notifications now.');
         return [];
       }
       const ids = this.apps.map((a) => `'${a.bundleId.replace(/'/g, "''")}'`).join(',');
@@ -124,10 +133,15 @@ export class NotificationCenterWatcher {
       }
       return results;
     } catch (err) {
-      if (!this.failed) {
-        console.warn(`Notification Center watcher disabled: ${(err as Error).message}. Grant Full Disk Access to read ${NC_DB_PATH}.`);
+      if (!this.warned) {
+        console.warn(
+          `Notification Center watcher paused: ${(err as Error).message.split('\n')[0]}. ` +
+            `Grant Full Disk Access to ${process.execPath} (or Terminal when using npm start) to read ${NC_DB_PATH}. Retrying every minute.`,
+        );
+        this.warned = true;
       }
       this.failed = true;
+      this.retryAt = Date.now() + 60_000;
       return [];
     }
   }
