@@ -242,7 +242,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   ],
   notifications: {
     enabled: true,
-    apps: [{ bundleId: 'net.whatsapp.WhatsApp', label: 'WhatsApp' }],
+    apps: [
+      { bundleId: 'net.whatsapp.WhatsApp', label: 'WhatsApp' },
+      { bundleId: 'desktop.WhatsApp', label: 'WhatsApp' },
+      { bundleId: 'WhatsApp', label: 'WhatsApp' },
+    ],
     showBody: true,
     badgeApps: ['WhatsApp'],
     pollSeconds: 3,

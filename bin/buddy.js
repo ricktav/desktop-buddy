@@ -63,7 +63,29 @@ function usage() {
   buddy remove <buddy-id>
   buddy reload
   buddy service install|uninstall|restart|status   run Desktop Buddy in the background and at login (macOS)
+  buddy diagnose                         check WhatsApp/notification watching step by step
 Options: --port N (or BUDDY_PORT), --token T (or BUDDY_TOKEN)`);
+}
+
+async function diagnose() {
+  const mod = path.join(PROJECT, 'dist', 'main', 'notifications.js');
+  if (!fs.existsSync(mod)) {
+    console.error('No build found. Run "npm run build" first.');
+    process.exitCode = 1;
+    return;
+  }
+  const { diagnose: run } = require(mod);
+  const { DEFAULT_CONFIG } = require(path.join(PROJECT, 'dist', 'shared', 'types.js'));
+  let cfg = DEFAULT_CONFIG.notifications;
+  const cfgPath = path.join(os.homedir(), 'Library', 'Application Support', 'desktop-buddy', 'config.json');
+  try {
+    const user = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    if (user.notifications) cfg = { ...cfg, ...user.notifications };
+    console.log(`config: ${cfgPath}`);
+  } catch {
+    console.log(`config: ${cfgPath} (not found, using defaults)`);
+  }
+  for (const line of await run(cfg)) console.log(line);
 }
 
 // ---- background service (macOS launchd user agent) ----------------------------
@@ -169,6 +191,7 @@ function service(sub) {
 async function main() {
   const [cmd, ...rest] = positional;
   if (cmd === 'service') return service(rest[0]);
+  if (cmd === 'diagnose') return diagnose();
   const common = {
     level: opts.level,
     duration: opts.duration !== undefined ? Number(opts.duration) : undefined,

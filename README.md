@@ -163,7 +163,10 @@ The buddy can announce incoming messages. Two sources are used on macOS:
    "New WhatsApp message" or "3 unread messages" when it grows.
 
 The *Notifications* submenu in the menu bar toggles announcements and the
-message preview, and shows which source is active. Config:
+message preview, and shows which source is active. If nothing is announced,
+run `buddy diagnose`: it checks the database access, lists which apps have
+posted notifications and under which bundle id, parses the latest WhatsApp
+record, and reads the Dock badge, reporting the first broken step. Config:
 
 ```jsonc
 "notifications": {
