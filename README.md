@@ -59,10 +59,21 @@ node bin/buddy.js service install     # or `buddy service install` after `npm li
 
 This registers a launchd user agent that starts Desktop Buddy at login with
 no terminal window and restarts it if it crashes. `buddy service status`,
-`buddy service restart` (after a `git pull` and `npm run build`) and
-`buddy service uninstall` manage it. Logs go to
+`buddy service restart` and `buddy service uninstall` manage it. Logs go to
 `~/Library/Logs/desktop-buddy.log`. Alternatively build the `.app` with
 `npm run dist` and add it to *System Settings → General → Login Items*.
+
+**Updating.** Only one Desktop Buddy runs at a time. While the service is
+running, `npm start` builds and then quits, and you keep seeing the old
+build. After a `git pull`, run
+
+```bash
+npm run update     # pull, install, build, restart the service
+```
+
+or pick *Restart Desktop Buddy (load new build)* from the paw menu. The
+first line of the menu shows the version and build time of the running
+copy, so you can tell at a glance.
 
 ## What the buddy does
 

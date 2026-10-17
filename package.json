@@ -1,6 +1,6 @@
 {
   "name": "desktop-buddy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A chibi Labrador desktop buddy that walks along the bottom of your screens, watches your active window, naps when you're idle, and delivers alerts and guidance.",
   "main": "dist/main/main.js",
   "private": true,
@@ -15,7 +15,8 @@
     "dev": "npm run build && electron . --dev",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
-    "dist": "npm run build && electron-builder --mac"
+    "dist": "npm run build && electron-builder --mac",
+    "update": "git pull && npm install --no-audit --no-fund && npm run build && node bin/buddy.js service restart"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

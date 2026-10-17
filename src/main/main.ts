@@ -20,8 +20,23 @@ const TICK_MS = 1000 / 30;
 registerPackScheme();
 
 if (!app.requestSingleInstanceLock()) {
+  console.error(
+    'Desktop Buddy is already running (probably the background service or another npm start).\n' +
+      'The running copy was asked to show a notice. To load a new build into it, choose "Restart Desktop Buddy" from the menu-bar paw,\n' +
+      'or run: node bin/buddy.js service restart',
+  );
   app.quit();
 }
+
+/** Build stamp shown in the menu so you can tell which build is running. */
+const BUILD_STAMP = (() => {
+  try {
+    const { statSync } = require('node:fs') as typeof import('node:fs');
+    return statSync(__filename).mtime.toLocaleString();
+  } catch {
+    return 'unknown';
+  }
+})();
 
 let cfg: AppConfig;
 let world: World;
@@ -195,6 +210,8 @@ function buildMenu(forBuddyId?: string): Menu {
     { label: `Apps: ${cfg.notifications.apps.map((a) => a.label).join(', ') || '(none, edit config)'}`, enabled: false },
   ];
   return Menu.buildFromTemplate([
+    { label: `Desktop Buddy v${app.getVersion()} — built ${BUILD_STAMP}`, enabled: false },
+    { type: 'separator' },
     ...(forBuddy
       ? [
           { label: `Pet ${forBuddy.name}`, click: () => forBuddy.pet(Date.now()) },
@@ -245,6 +262,13 @@ function buildMenu(forBuddyId?: string): Menu {
     { label: 'Reload config', click: () => void reloadConfig() },
     { type: 'separator' },
     { label: `API: http://127.0.0.1:${cfg.api.port}${cfg.api.enabled ? '' : ' (disabled)'}`, enabled: false },
+    {
+      label: 'Restart Desktop Buddy (load new build)',
+      click: () => {
+        app.relaunch();
+        app.exit(0);
+      },
+    },
     { label: 'Quit Desktop Buddy', click: () => app.quit() },
   ]);
 }
@@ -413,7 +437,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('second-instance', () => {
-  world?.alert({ message: 'I am already running! Look for me in the menu bar.', target: 'here' });
+  world?.alert({
+    message: 'I am already running (this copy was started earlier). To load a new build, pick "Restart Desktop Buddy" from the paw menu.',
+    target: 'here',
+    duration: 15,
+    level: 'warn',
+  });
 });
 
 app.on('window-all-closed', () => {
