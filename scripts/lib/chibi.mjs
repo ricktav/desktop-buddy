@@ -167,9 +167,10 @@ export function humanAnimations(st, o = {}) {
     },
     alert: {
       fps: 4,
+      // `extraFrames` lets a style vary the overlay per frame (e.g. a flapping bat).
       frames: [
-        S({ ...(o.alert ?? {}), eyes: 'wide', mouth: 'o', armL: [-22, -16], armR: [22, -16] }),
-        S({ ...(o.alert ?? {}), eyes: 'wide', mouth: 'o', armL: [-22, -18], armR: [22, -18], bob: -6 }),
+        S({ ...(o.alert ?? {}), extra: o.alert?.extraFrames?.[0] ?? o.alert?.extra ?? '', eyes: 'wide', mouth: 'o', armL: [-22, -16], armR: [22, -16] }),
+        S({ ...(o.alert ?? {}), extra: o.alert?.extraFrames?.[1] ?? o.alert?.extra ?? '', eyes: 'wide', mouth: 'o', armL: [-22, -18], armR: [22, -18], bob: -6 }),
       ],
     },
     happy: {

@@ -64,10 +64,22 @@ const style = {
     `<path d="M ${cx - 12} ${cy + 12} q 12 6 24 0" fill="none" ${stroke(1.2, BONE_DK)}/>`,
 };
 
-const bat = (x, y) => `<path d="M ${x} ${y} q -4 -6 -9 -2 q 3 -1 4 3 q -3 2 -6 1 q 4 5 11 0 q 7 5 11 0 q -3 1 -6 -1 q 1 -4 4 -3 q -5 -4 -9 2 z" fill="#2A2A36" ${stroke(1, '#111')}/>`;
+/** A bat seen from the front, centred at (x, y). `s` scales it, `flap` raises the wing tips. */
+const bat = (x, y, s = 1.5, flap = 0) => {
+  const wing = (m) =>
+    `<path d="M ${m * 2} -1 C ${m * 8} -9 ${m * 15} ${-9 - flap} ${m * 19} ${-4 - flap} ` +
+    `C ${m * 17} -2 ${m * 15} -1 ${m * 13} 2 C ${m * 12} 0 ${m * 10} 0 ${m * 9} 3 C ${m * 8} 1 ${m * 6} 2 ${m * 3} 5 Z" fill="#2A2A36" ${stroke(0.8, '#111')}/>`;
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+${wing(-1)}${wing(1)}
+<ellipse cx="0" cy="2" rx="3.4" ry="5.5" fill="#2A2A36" ${stroke(0.8, '#111')}/>
+<path d="M -3 -5 l -1.5 -4.5 l 3.5 2 z M 3 -5 l 1.5 -4.5 l -3.5 2 z" fill="#2A2A36" ${stroke(0.8, '#111')}/>
+<circle cx="0" cy="-4" r="3.6" fill="#2A2A36" ${stroke(0.8, '#111')}/>
+<circle cx="-1.4" cy="-4.4" r="0.9" fill="${GLOW}"/><circle cx="1.4" cy="-4.4" r="0.9" fill="${GLOW}"/>
+</g>`;
+};
 
 const anims = humanAnimations(style, {
-  alert: { extra: BANG(118, 34) + bat(104, 50) },
+  alert: { extraFrames: [BANG(122, 56) + bat(102, 24, 1.5, 0), BANG(122, 56) + bat(102, 18, 1.5, 4)] },
   happy: { extra: HEART() },
 });
 
