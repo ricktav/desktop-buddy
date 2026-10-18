@@ -1,7 +1,8 @@
-// DNA buddy "Helix": a chibi double helix in purple and pink with a round head,
-// tendril arms and legs. The helix rotates (the phase shifts per frame) and
-// "unzips" in the middle for its double-click trick.
-// Run: node scripts/gen-dna-sprites.mjs
+// DNA buddies in purple and pink. "Helix" is a chibi double helix with a round
+// head, tendril arms and legs; "Strand" is the headless version where the face
+// is drawn straight onto the helix. The helix rotates (the phase shifts per
+// frame) and "unzips" in the middle for the double-click trick.
+// Run: node scripts/gen-dna-sprites.mjs  (writes buddies/dna and buddies/dna-strand)
 import { svgWrap, writePack, SLEEP_MARKS, BANG, HEART, FLOOR } from './lib/sprite.mjs';
 
 const DEFS = `
@@ -15,6 +16,9 @@ const INK = '#2B1250';
 const K = (2 * Math.PI) / 46; // one full twist every 46 px
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/** true while generating the headless variant (the face sits on the helix). */
+let HEADLESS = false;
 
 /**
  * Double-helix body. Strand +1 is purple, strand -1 is pink; depth comes from
@@ -89,6 +93,37 @@ function eye(x, y, mode) {
   }
 }
 
+/** Two small twisting strands: the tuft on top of the head, or the tip of the headless helix. */
+function tuft(cx, by, h = 10) {
+  const a = `M ${cx - 2} ${by} C ${cx - 9} ${by - h * 0.5} ${cx + 3} ${by - h * 0.6} ${cx - 2} ${by - h}`;
+  const b = `M ${cx + 2} ${by} C ${cx + 9} ${by - h * 0.5} ${cx - 3} ${by - h * 0.6} ${cx + 2} ${by - h}`;
+  return `<path d="${a}" fill="none" stroke="${PUR.line}" stroke-width="4.6" stroke-linecap="round"/><path d="${a}" fill="none" stroke="${PUR.front}" stroke-width="2.4" stroke-linecap="round"/>` +
+    `<path d="${b}" fill="none" stroke="${PNK.line}" stroke-width="4.6" stroke-linecap="round"/><path d="${b}" fill="none" stroke="${PNK.front}" stroke-width="2.4" stroke-linecap="round"/>`;
+}
+
+/** Eyes and mouth drawn directly on the strands, with white halos so they read on the colours. */
+function faceOnHelix(cx, cy, { eyes = 'open', mouth = 'smile' } = {}) {
+  const halo = (d, w = 2.4) => `<path d="${d}" fill="none" stroke="#fff" stroke-width="${w + 3.4}" stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/><path d="${d}" fill="none" stroke="${INK}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const ey = cy, L = cx - 9.5, R = cx + 9.5;
+  const eye = (x) => {
+    switch (eyes) {
+      case 'closed': return halo(`M ${x - 4.5} ${ey} q 4.5 3.6 9 0`);
+      case 'happy': return halo(`M ${x - 4.5} ${ey + 1.4} q 4.5 -6 9 0`, 2.6);
+      case 'wide': return `<ellipse cx="${x}" cy="${ey}" rx="6.2" ry="7.2" fill="#fff" stroke="${INK}" stroke-width="1.4"/><circle cx="${x}" cy="${ey}" r="3.4" fill="${INK}"/><circle cx="${x + 1.3}" cy="${ey - 1.4}" r="1.2" fill="#fff"/>`;
+      case 'up': return `<ellipse cx="${x}" cy="${ey}" rx="5" ry="6" fill="#fff" stroke="${INK}" stroke-width="1.3"/><ellipse cx="${x + 0.5}" cy="${ey - 2}" rx="3" ry="3.6" fill="${INK}"/><circle cx="${x + 1.5}" cy="${ey - 3.2}" r="1.1" fill="#fff"/>`;
+      case 'worried': return `<ellipse cx="${x}" cy="${ey}" rx="5" ry="6" fill="#fff" stroke="${INK}" stroke-width="1.3"/><ellipse cx="${x}" cy="${ey + 1}" rx="3" ry="3.6" fill="${INK}"/><circle cx="${x + 1}" cy="${ey - 0.6}" r="1.1" fill="#fff"/>` + halo(`M ${x - 5} ${ey - 9} l 9.5 2.8`, 1.8);
+      default: return `<ellipse cx="${x}" cy="${ey}" rx="5.6" ry="6.6" fill="#fff" stroke="${INK}" stroke-width="1.3"/><ellipse cx="${x + 0.4}" cy="${ey + 0.4}" rx="3.3" ry="4.1" fill="${INK}"/><circle cx="${x + 1.6}" cy="${ey - 1.6}" r="1.3" fill="#fff"/>`;
+    }
+  };
+  let m;
+  const my = cy + 13;
+  if (mouth === 'grin') m = `<path d="M ${cx - 6.5} ${my - 1} q 6.5 10 13 0 z" fill="#B8324F" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"/><path d="M ${cx - 6.5} ${my - 1} q 6.5 10 13 0 z" fill="#B8324F" stroke="#7C1F36" stroke-width="1.1" stroke-linejoin="round"/><path d="M ${cx - 4.6} ${my} h 9.2" stroke="#fff" stroke-width="2"/>`;
+  else if (mouth === 'o') m = `<ellipse cx="${cx}" cy="${my + 1}" rx="3.3" ry="4.1" fill="#B8324F" stroke="#fff" stroke-width="2.4"/><ellipse cx="${cx}" cy="${my + 1}" rx="3.1" ry="3.9" fill="#B8324F" stroke="#7C1F36" stroke-width="1"/>`;
+  else if (mouth === 'flat') m = halo(`M ${cx - 4} ${my + 1} h 8`, 2);
+  else m = halo(`M ${cx - 5.5} ${my - 0.5} q 5.5 5.5 11 0`, 2.2);
+  return `<ellipse cx="${cx - 15}" cy="${ey + 9}" rx="3.6" ry="2.4" fill="#FF8FB8" opacity="0.75"/><ellipse cx="${cx + 15}" cy="${ey + 9}" rx="3.6" ry="2.4" fill="#FF8FB8" opacity="0.75"/>` + eye(L) + eye(R) + m;
+}
+
 function head(cx, cy, { eyes = 'open', mouth = 'smile', tilt = 0 } = {}) {
   let m;
   if (mouth === 'grin') m = `<path d="M ${cx - 6.5} ${cy + 8} q 6.5 9.5 13 0 z" fill="#B8324F" stroke="#7C1F36" stroke-width="1.2" stroke-linejoin="round"/><path d="M ${cx - 4.6} ${cy + 8.9} h 9.2" stroke="#fff" stroke-width="2"/>`;
@@ -97,8 +132,7 @@ function head(cx, cy, { eyes = 'open', mouth = 'smile', tilt = 0 } = {}) {
   else m = `<path d="M ${cx - 5} ${cy + 8} q 5 5 10 0" fill="none" stroke="#9E2F4C" stroke-width="2.2" stroke-linecap="round"/>`;
   return `<g transform="rotate(${tilt} ${cx} ${cy + 16})">` +
     // tiny twisting tuft
-    `<path d="M ${cx - 2} ${cy - 17} C ${cx - 9} ${cy - 22} ${cx + 3} ${cy - 23} ${cx - 2} ${cy - 27}" fill="none" stroke="${PUR.line}" stroke-width="4.6" stroke-linecap="round"/><path d="M ${cx - 2} ${cy - 17} C ${cx - 9} ${cy - 22} ${cx + 3} ${cy - 23} ${cx - 2} ${cy - 27}" fill="none" stroke="${PUR.front}" stroke-width="2.4" stroke-linecap="round"/>` +
-    `<path d="M ${cx + 2} ${cy - 17} C ${cx + 9} ${cy - 22} ${cx - 3} ${cy - 23} ${cx + 2} ${cy - 27}" fill="none" stroke="${PNK.line}" stroke-width="4.6" stroke-linecap="round"/><path d="M ${cx + 2} ${cy - 17} C ${cx + 9} ${cy - 22} ${cx - 3} ${cy - 23} ${cx + 2} ${cy - 27}" fill="none" stroke="${PNK.front}" stroke-width="2.4" stroke-linecap="round"/>` +
+    tuft(cx, cy - 17) +
     `<circle cx="${cx}" cy="${cy}" r="19.5" fill="url(#head)" stroke="${PUR.line}" stroke-width="2"/>` +
     `<ellipse cx="${cx - 8}" cy="${cy - 11}" rx="6.5" ry="3.2" fill="#fff" opacity="0.6" transform="rotate(-28 ${cx - 8} ${cy - 11})"/>` +
     `<ellipse cx="${cx - 13.5}" cy="${cy + 7}" rx="4.2" ry="2.7" fill="#FF8FB8" opacity="0.6"/><ellipse cx="${cx + 13.5}" cy="${cy + 7}" rx="4.2" ry="2.7" fill="#FF8FB8" opacity="0.6"/>` +
@@ -117,9 +151,9 @@ const foot = (x, y, col) => `<ellipse cx="${x + 2}" cy="${y}" rx="7.4" ry="3.6" 
 /**
  * One full figure. arms: [left, right] hand end points relative to the shoulders.
  */
-function dna({ phase = 0, bob = 0, tilt = 0, headTilt = 0, eyes = 'open', mouth = 'smile', armL = [-9, 20], armR = [9, 20], swing = 0, lift = [0, 0], split = 0, sit = false, extra = '', A = 17 } = {}) {
+function dna({ phase = 0, bob = 0, tilt = 0, headTilt = 0, eyes = 'open', mouth = 'smile', armL = [-9, 20], armR = [9, 20], swing = 0, lift = [0, 0], split = 0, sit = false, extra = '', A = HEADLESS ? 19.5 : 17 } = {}) {
   const hy = 34 + bob;
-  const y0 = 50 + bob, y1 = (sit ? 117 : 114) + bob * 0.3;
+  const y0 = (HEADLESS ? 32 : 50) + bob, y1 = (sit ? 117 : 114) + bob * 0.3;
   const airborne = bob < -4;
   const footY = airborne ? 120 + bob + 3 : 120;
   const legs = sit
@@ -127,13 +161,16 @@ function dna({ phase = 0, bob = 0, tilt = 0, headTilt = 0, eyes = 'open', mouth 
     : `<path d="M 57 ${y1 - 4} Q ${55 + swing} ${(y1 + footY) / 2} ${54 + swing} ${footY - 3 - lift[0]}" fill="none" stroke="${PUR.line}" stroke-width="7.4" stroke-linecap="round"/><path d="M 57 ${y1 - 4} Q ${55 + swing} ${(y1 + footY) / 2} ${54 + swing} ${footY - 3 - lift[0]}" fill="none" stroke="${PUR.front}" stroke-width="4.6" stroke-linecap="round"/>` +
       `<path d="M 71 ${y1 - 4} Q ${73 - swing} ${(y1 + footY) / 2} ${74 - swing} ${footY - 3 - lift[1]}" fill="none" stroke="${PNK.line}" stroke-width="7.4" stroke-linecap="round"/><path d="M 71 ${y1 - 4} Q ${73 - swing} ${(y1 + footY) / 2} ${74 - swing} ${footY - 3 - lift[1]}" fill="none" stroke="${PNK.front}" stroke-width="4.6" stroke-linecap="round"/>` +
       foot(54 + swing, footY - lift[0], PUR) + foot(74 - swing, footY - lift[1], PNK);
-  const sy = y0 + 24;
+  const sy = y0 + (HEADLESS ? 34 : 24);
   const body =
     tendril(50, sy, 50 + armL[0], sy + armL[1], PUR, -4) +
     helix({ y0, y1, A, phase, split }) +
     tendril(78, sy, 78 + armR[0], sy + armR[1], PNK, 4);
   // arms are drawn behind the helix on the near side so they emerge from it
-  const figure = legs + body + head(64, hy, { eyes, mouth, tilt: headTilt }) + extra;
+  const top = HEADLESS
+    ? tuft(64, y0 + 1, 11) + `<g transform="rotate(${headTilt} 64 ${y0 + 30})">${faceOnHelix(64, y0 + 26, { eyes, mouth })}</g>`
+    : head(64, hy, { eyes, mouth, tilt: headTilt });
+  const figure = legs + body + top + extra;
   const squash = sit ? ` scale(1.05 0.9)` : '';
   const k = 0.92;
   return svgWrap(
@@ -147,7 +184,7 @@ function dna({ phase = 0, bob = 0, tilt = 0, headTilt = 0, eyes = 'open', mouth 
 function lying({ phase = 0, extra = '' } = {}) {
   const standing = dna({ phase, eyes: 'closed', mouth: 'flat', armL: [-6, 22], armR: [6, 22] });
   const inner = standing.replace(/^<svg[^>]*>\n<defs>[\s\S]*?<\/defs>\n/, '').replace(/\n<\/svg>\n$/, '');
-  return svgWrap(`<g transform="translate(0 24) rotate(90 64 76)">${inner.replace(/<ellipse cx="64" cy="122"[^>]*\/>/, '')}</g>` +
+  return svgWrap(`<g transform="translate(0 ${HEADLESS ? 29 : 24}) rotate(90 64 ${HEADLESS ? 70 : 76})">${inner.replace(/<ellipse cx="64" cy="122"[^>]*\/>/, '')}</g>` +
     `<ellipse cx="64" cy="122" rx="40" ry="3" fill="#000" opacity="0.14"/>` + extra, { defs: DEFS });
 }
 
@@ -158,7 +195,8 @@ const SPARK = (dy = 0) =>
 const PI2 = Math.PI * 2;
 const ph = (i, n) => (i / n) * PI2;
 
-const anims = {
+function makeAnims() {
+  return {
   idle: { fps: 3, frames: [0, 1, 2, 3].map((i) => dna({ phase: ph(i, 4), eyes: i === 2 ? 'closed' : 'open', bob: i % 2 ? -1 : 0, headTilt: [0, -2, 0, 2][i] })) },
   walk: {
     fps: 8,
@@ -188,9 +226,18 @@ const anims = {
     })),
   },
 };
+}
 
+HEADLESS = false;
 writePack('dna', {
   name: 'Helix',
   petLines: ['I have your genes... I mean eyes!', '*twists happily*', 'Base pairs forever!', 'A-T, C-G, you and me.', '*replicates giggles*'],
   doubleClick: { animation: 'trick', seconds: 3.5, say: 'Replicating!', effect: { type: 'arc-letters', text: 'DNA' } },
-}, anims);
+}, makeAnims());
+
+HEADLESS = true;
+writePack('dna-strand', {
+  name: 'Strand',
+  petLines: ['No head, no problem!', '*twists*', 'Mind the gap!', 'I wear my heart on my helix.', '*unzips shyly*'],
+  doubleClick: { animation: 'trick', seconds: 3.5, say: 'Transcribing!', effect: { type: 'arc-letters', text: 'RNA' } },
+}, makeAnims());
