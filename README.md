@@ -5,8 +5,9 @@ walks over to whatever window you are working in and watches it, sits down
 when you go idle, falls asleep if you stay away, and delivers alerts and
 on-screen guidance from your scripts, tools and timed reminders.
 
-Built with Electron + TypeScript for macOS. Nine buddies ship in the box
-and you can add your own as folders of sprite frames.
+Built with Electron + TypeScript for macOS. Twelve buddies ship in the box,
+and you can have any AI design more for you (see
+[Make your own buddy with an AI](docs/CREATE-A-BUDDY.md)).
 
 | Pack | Name | Style |
 |---|---|---|
@@ -19,6 +20,9 @@ and you can add your own as folders of sprite frames.
 | `lab-doctor` | Dr. Vee | Chibi lab doctor in a white coat over scrubs, stethoscope and clipboard, blond bob with red tips |
 | `skeleton` | Rattles | Chibi skeleton with glowing eye sockets and a ribcage; a bat shows up on alerts |
 | `pumpkin` | Jack | Halloween jack-o'-lantern on vine legs with a flickering candle that flares when alerting |
+| `duckling` | Pip | Natural, downy duckling with soft shading and brown markings; hops and flaps on double-click |
+| `rubber-duck` | Squeaky | Glossy yellow rubber bath duck floating on a puddle; double-click squeezes it for a SQUEAK |
+| `capybara` | Capy | Calm capybara with a blunt snout; double-click and it relaxes with a yuzu on its head and rising steam |
 
 **Choosing buddies.** Click the paw in the menu bar and open *Buddies*: each
 pack is a checkbox. Tick one to put it on screen, untick it to remove it.
@@ -112,6 +116,8 @@ buddy say "Stand-up in 5 minutes" --duration 0     # sticky bubble until clicked
 buddy state                                        # positions, moods, active window, idle time
 buddy buddies                                      # active buddies and installable packs
 buddy add lab-black                                # add a second buddy
+buddy import examples/ghost.buddy.json             # install an AI-made buddy (file, folder, or - for stdin)
+buddy validate my-buddy.json                       # check an AI-made buddy and list problems
 buddy remove lab-black-2
 buddy reload                                       # re-read config.json
 ```
@@ -226,6 +232,15 @@ Reminders accept `every` (`90s`, `45m`, `2h`) or `at` (`HH:MM`, optional
 `days` with 0 = Sunday), plus the same `level` and `target` fields as alerts.
 
 ## Adding your own buddy
+
+**With an AI:** copy the prompt in [docs/LLM-PROMPT.md](docs/LLM-PROMPT.md)
+into any chat AI, describe your character, copy its JSON answer and choose
+*Import buddy from clipboard* in the paw menu (or
+`pbpaste | node bin/buddy.js import -`). The full walkthrough, a ready-made
+"fix it" message, and a working example (`examples/ghost.buddy.json`) are in
+[docs/CREATE-A-BUDDY.md](docs/CREATE-A-BUDDY.md).
+
+**By hand:**
 
 A buddy is a folder containing `buddy.json` and its frame images (SVG or
 PNG). Put it in `~/Library/Application Support/desktop-buddy/buddies/`,

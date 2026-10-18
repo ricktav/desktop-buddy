@@ -64,7 +64,69 @@ function usage() {
   buddy reload
   buddy service install|uninstall|restart|status   run Desktop Buddy in the background and at login (macOS)
   buddy diagnose                         check WhatsApp/notification watching step by step
+  buddy validate <folder|file.json|->    check a buddy (folder or single-file bundle; - reads stdin) and list problems
+  buddy import <folder|file.json|->      install a buddy and put it on screen   [--id name] [--force] [--no-add] [--dir path]
+                                         e.g.  pbpaste | node bin/buddy.js import -
 Options: --port N (or BUDDY_PORT), --token T (or BUDDY_TOKEN)`);
+}
+
+// ---- validate / import ----------------------------------------------------------
+function bundleModule() {
+  const mod = path.join(PROJECT, 'dist', 'main', 'bundle.js');
+  if (!fs.existsSync(mod)) throw new Error('No build found. Run "npm run build" first.');
+  return require(mod);
+}
+
+function readSource(src) {
+  if (src === '-') return { kind: 'text', value: fs.readFileSync(0, 'utf8') };
+  const p = path.resolve(src);
+  if (!fs.existsSync(p)) throw new Error(`${src} does not exist`);
+  return fs.statSync(p).isDirectory() ? { kind: 'folder', value: p } : { kind: 'text', value: fs.readFileSync(p, 'utf8') };
+}
+
+function validateCmd(src) {
+  const b = bundleModule();
+  const s = readSource(src);
+  let report;
+  if (s.kind === 'folder') report = b.validateFolder(s.value);
+  else {
+    const parsed = b.parseBundleText(s.value);
+    report = parsed.bundle ? b.validateBundle(parsed.bundle) : { errors: [parsed.error], warnings: [], info: [] };
+  }
+  console.log(b.formatReport(report) || '(nothing to report)');
+  if (report.errors.length) {
+    console.log(`\n${report.errors.length} error(s). Fix these (or paste this list to the AI that made the buddy) and validate again.`);
+    process.exitCode = 1;
+  } else {
+    console.log('\nValid. Install it with: node bin/buddy.js import ' + (src === '-' ? '-' : src));
+  }
+}
+
+async function importCmd(src) {
+  const b = bundleModule();
+  const s = readSource(src);
+  const options = {
+    destRoot: opts.dir ? path.resolve(String(opts.dir)) : b.userBuddiesPath(),
+    id: typeof opts.id === 'string' ? opts.id : undefined,
+    force: !!opts.force,
+    bundledDir: path.join(PROJECT, 'buddies'),
+  };
+  const result = s.kind === 'folder' ? b.importFolder(s.value, options) : b.importBundleText(s.value, options);
+  console.log(b.formatReport(result.report) || '(nothing to report)');
+  if (!result.ok) {
+    console.log('\nNot imported. Fix the problems above (or paste them to the AI that made the buddy).');
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`\nInstalled "${result.id}" in ${result.dir}`);
+  if (opts['no-add']) return;
+  try {
+    const r = await request('POST', '/buddies', { pack: result.id });
+    if (r.status < 400) console.log('Added to your screen. Untick it under Buddies in the paw menu to remove it.');
+    else console.log(`Installed, but the running app could not add it: ${JSON.stringify(r.body)}`);
+  } catch {
+    console.log('Desktop Buddy is not running. Start it and tick the new buddy under Buddies in the paw menu.');
+  }
 }
 
 async function diagnose() {
@@ -192,6 +254,8 @@ async function main() {
   const [cmd, ...rest] = positional;
   if (cmd === 'service') return service(rest[0]);
   if (cmd === 'diagnose') return diagnose();
+  if (cmd === 'validate') return rest[0] ? validateCmd(rest[0]) : usage();
+  if (cmd === 'import') return rest[0] ? importCmd(rest[0]) : usage();
   const common = {
     level: opts.level,
     duration: opts.duration !== undefined ? Number(opts.duration) : undefined,
@@ -233,6 +297,10 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(`Could not reach Desktop Buddy on port ${port}: ${err.message}\nIs the app running?`);
+  if (err && (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET')) {
+    console.error(`Could not reach Desktop Buddy on port ${port}: ${err.message}\nIs the app running?`);
+  } else {
+    console.error(err && err.message ? err.message : String(err));
+  }
   process.exitCode = 2;
 });

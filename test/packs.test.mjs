@@ -8,8 +8,8 @@ const EXPECTED = ['idle', 'walk', 'sit', 'sleep', 'watch', 'point', 'alert', 'ha
 const root = join(import.meta.dirname, '..', 'buddies');
 const packs = readdirSync(root).filter((d) => statSync(join(root, d)).isDirectory());
 
-test('bundled packs include the nine shipped buddies', () => {
-  for (const p of ['lab-yellow', 'lab-chocolate', 'lab-black', 'robot-pixel', 'unicorn', 'rainbow-man', 'lab-doctor', 'skeleton', 'pumpkin']) {
+test('bundled packs include the twelve shipped buddies', () => {
+  for (const p of ['lab-yellow', 'lab-chocolate', 'lab-black', 'robot-pixel', 'unicorn', 'rainbow-man', 'lab-doctor', 'skeleton', 'pumpkin', 'duckling', 'rubber-duck', 'capybara']) {
     assert.ok(packs.includes(p), `${p} missing`);
   }
 });

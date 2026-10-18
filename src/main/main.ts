@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } from 'electron';
 import { cpSync, existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { AlertRequest, AppConfig } from '../shared/types';
@@ -6,8 +6,9 @@ import { World } from '../sim/world';
 import { ActiveWindowTracker } from './activeWindow';
 import { startApi } from './api';
 import { configPath, loadConfig, saveConfig, userBuddiesDir } from './config';
-import { installPackProtocol, listAvailablePacks, loadedPackManifests, loadPack, registerPackScheme } from './packs';
+import { bundledBuddiesDir, installPackProtocol, listAvailablePacks, loadedPackManifests, loadPack, registerPackScheme } from './packs';
 import { ReminderScheduler } from './reminders';
+import { formatReport, importBundleText } from './bundle';
 import { TimerManager, timerDoneMessage } from './timers';
 import { NotificationService, announcement, launchContext, appDisplayName, type LaunchContext } from './notifications';
 import { allDisplays, OverlayWindows } from './windows';
@@ -265,6 +266,7 @@ function buildMenu(forBuddyId?: string): Menu {
       },
     },
     { label: 'Install buddy folder…', click: () => void installBuddyFolder() },
+    { label: 'Import buddy from clipboard (AI-made JSON)…', click: () => void importFromClipboard() },
     { type: 'separator' },
     { label: running.length ? `Timers (${running.length} running)` : 'Timers', submenu: timerItems },
     { label: 'Notifications', submenu: notifItems },
@@ -290,6 +292,34 @@ function buildMenu(forBuddyId?: string): Menu {
     },
     { label: 'Quit Desktop Buddy', click: () => app.quit() },
   ]);
+}
+
+/** Install a buddy from AI-written JSON on the clipboard and put it on screen. */
+async function importFromClipboard(): Promise<void> {
+  const text = await clipboard.readText();
+  if (!text.trim()) {
+    dialog.showMessageBoxSync({ type: 'info', message: 'The clipboard is empty', detail: 'Copy the JSON the AI wrote (the whole code block), then choose this again.' });
+    return;
+  }
+  const res = importBundleText(text, { destRoot: userBuddiesDir(), bundledDir: bundledBuddiesDir(), autoSuffix: true });
+  if (!res.ok || !res.id) {
+    dialog.showMessageBoxSync({
+      type: 'error',
+      message: 'Could not import this buddy',
+      detail: `${formatReport(res.report)}\n\nCopy this list back to the AI and ask it to fix the JSON.`,
+    });
+    return;
+  }
+  try {
+    const id = addBuddyFromEntry({ pack: res.id });
+    cfg.buddies.push({ pack: res.id, enabled: true });
+    saveConfig(cfg);
+    buildTray();
+    const b = world.findBuddy(id);
+    world.alert({ message: `Hi! I'm ${b?.name ?? res.id}. Nice to meet you!`, target: 'here', duration: 6, buddy: id, cheer: true });
+  } catch (err) {
+    dialog.showErrorBox('Imported, but could not load', (err as Error).message);
+  }
 }
 
 async function installBuddyFolder(): Promise<void> {
