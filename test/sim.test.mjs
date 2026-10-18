@@ -17,9 +17,9 @@ function seeded(seed = 1) {
   };
 }
 
-function makeWorld({ displays = [D1, D2], seed = 1 } = {}) {
+function makeWorld({ displays = [D1, D2], seed = 1, cfgOver = {} } = {}) {
   let now = 0;
-  const world = new World({ cfg, rng: seeded(seed), now: () => now });
+  const world = new World({ cfg: { ...cfg, ...cfgOver }, rng: seeded(seed), now: () => now });
   world.setDisplays(displays);
   const b = world.addBuddy('b1', 'lab-yellow', manifest);
   const run = (seconds, dt = 1 / 30) => {
@@ -272,4 +272,75 @@ test('clicking a cheering buddy ends the celebration and nothing lingers', () =>
   assert.equal(b.mood, 'happy');
   run(3);
   assert.equal(b.mood, 'wander');
+});
+
+const FAR_WINDOW = { app: 'Code', title: 'far', bounds: { x: 650, y: 100, width: 100, height: 200 }, observedAt: 0 };
+
+test('speed factor scales how far a buddy walks', () => {
+  const dist = (factor) => {
+    const { world, b, run } = makeWorld({ cfgOver: { speedFactor: factor } });
+    b.x = 60;
+    world.activeWindow = FAR_WINDOW;
+    run(1);
+    return b.x - 60;
+  };
+  const slow = dist(1), fast = dist(3), turbo = dist(6);
+  assert.ok(slow > 30, `walks at normal speed (${slow})`);
+  assert.ok(fast / slow > 2.7 && fast / slow < 3.3, `3x is about 3 times as far (${fast / slow})`);
+  assert.ok(turbo / slow > 5.4 && turbo / slow < 6.6, `6x is about 6 times as far (${turbo / slow})`);
+});
+
+test('a speed boost applies per buddy, can be timed, and expires', () => {
+  const { world, b, run } = makeWorld();
+  const other = world.addBuddy('o1', 'lab-yellow', manifest);
+  other.x = 60;
+  b.x = 60;
+  world.activeWindow = FAR_WINDOW;
+  assert.equal(world.boostSpeed(4, 2, 'b1'), 1);
+  assert.equal(world.boostSpeed(4, 2, 'nobody'), 0);
+  assert.equal(world.speedBoosts().length, 1);
+  run(1.5);
+  assert.ok((b.x - 60) / (other.x - 60) > 3, 'boosted buddy is much further along');
+  run(1.5);
+  assert.equal(world.speedBoosts().length, 0, 'boost expired');
+  // untimed boost on all buddies stays until cleared with factor 1
+  assert.equal(world.boostSpeed(2, null), 2);
+  run(1);
+  assert.equal(world.speedBoosts().length, 2);
+  world.boostSpeed(1, null);
+  assert.equal(world.speedBoosts().length, 0);
+});
+
+test('hurry and speed make an alert trip faster', () => {
+  const arrival = (req) => {
+    const { world, b, run, clock } = makeWorld();
+    b.x = 60;
+    world.activeWindow = FAR_WINDOW;
+    world.alert({ message: 'go', duration: 0, ...req });
+    const start = clock();
+    for (let i = 0; i < 600 && !b.bubble; i++) run(0.1);
+    return clock() - start;
+  };
+  const normal = arrival({}), hurry = arrival({ hurry: true }), custom = arrival({ speed: 5 });
+  assert.ok(hurry < normal * 0.6, `hurry (${hurry}ms) is much faster than normal (${normal}ms)`);
+  assert.ok(custom < hurry, `speed 5 (${custom}ms) beats hurry (${hurry}ms)`);
+});
+
+test('the leg animation runs faster when the buddy does', () => {
+  const frameChanges = (factor) => {
+    const { world, b, run } = makeWorld({ cfgOver: { speedFactor: factor } });
+    b.x = 60;
+    world.activeWindow = FAR_WINDOW;
+    run(0.2);
+    assert.equal(b.view().animation, 'walk');
+    let last = b.view().frame, changes = 0;
+    for (let i = 0; i < 60; i++) {
+      run(1 / 30);
+      const f = b.view().frame;
+      if (f !== last) changes++;
+      last = f;
+    }
+    return changes;
+  };
+  assert.ok(frameChanges(3) > frameChanges(1) * 1.8, 'more frame changes at 3x');
 });

@@ -16,6 +16,8 @@ export interface SimConfig {
   idleSleepAfter: number;
   walkSpeed: number;
   bubbleSeconds: number;
+  /** Multiplier on all movement; undefined means 1. */
+  speedFactor?: number;
 }
 
 export interface Rng {
@@ -29,6 +31,8 @@ export interface PendingAlert {
   target: { kind: 'floor'; x: number; displayId: number } | { kind: 'point'; x: number; y: number; displayId: number } | { kind: 'here' };
   durationMs: number | null;
   cheer?: boolean;
+  /** Travel speed multiplier for this trip. */
+  speed?: number;
 }
 
 const EDGE_MARGIN = 40;
@@ -90,6 +94,12 @@ export class Buddy {
   cheering = false;
 
   private animTime = 0;
+  /** A temporary or per-buddy speed boost on top of the global speed factor. */
+  private boost: { factor: number; until: number } | null = null;
+  /** Global factor times boost, refreshed every tick. */
+  private curFactor = 1;
+  /** Speed multiplier of the walk in progress, used to pace the leg animation. */
+  private moveFactor = 1;
   private targetX: number | null = null;
   private targetY: number | null = null;
   private speedScale = 1;
@@ -124,6 +134,18 @@ export class Buddy {
     this.y = floorOf(display);
     this.targetX = null;
     this.targetY = null;
+  }
+
+  /** Move faster (or slower) than the global speed. `seconds` null = until changed; factor 1 with null clears the boost. */
+  setBoost(factor: number, seconds: number | null, now: number): void {
+    if (seconds === null && factor === 1) this.boost = null;
+    else this.boost = { factor, until: seconds === null ? Infinity : now + seconds * 1000 };
+  }
+
+  /** Current boost, if any, for status displays. */
+  boostInfo(now: number): { factor: number; remainingSeconds: number | null } | null {
+    if (!this.boost || now >= this.boost.until) return null;
+    return { factor: this.boost.factor, remainingSeconds: this.boost.until === Infinity ? null : (this.boost.until - now) / 1000 };
   }
 
   queueAlert(alert: PendingAlert): void {
@@ -207,6 +229,8 @@ export class Buddy {
     if (this.bubble && this.bubble.until !== null && now >= this.bubble.until) {
       this.bubble = null;
     }
+    if (this.boost && now >= this.boost.until) this.boost = null;
+    this.curFactor = (this.cfg.speedFactor ?? 1) * (this.boost ? this.boost.factor : 1);
 
     // 1. Idle handling: sit, then sleep. Any activity wakes the buddy.
     const idle = idleSeconds >= this.cfg.idleSitAfter;
@@ -292,7 +316,8 @@ export class Buddy {
         break;
     }
 
-    this.animTime += dt;
+    // Legs move faster when the buddy does (never slower than 70% or faster than 3.5x).
+    this.animTime += dt * (this.animation === 'walk' ? Math.min(3.5, Math.max(0.7, this.moveFactor)) : 1);
   }
 
   // ---- behaviours ------------------------------------------------------
@@ -326,7 +351,8 @@ export class Buddy {
   /** Walk toward targetX along the floor, switching displays when crossing. */
   private tickWalk(dt: number, displays: DisplayInfo[], speedScale: number): void {
     if (this.targetX === null) return;
-    const speed = this.cfg.walkSpeed * speedScale;
+    const speed = this.cfg.walkSpeed * speedScale * this.curFactor;
+    this.moveFactor = speedScale * this.curFactor;
     const dx = this.targetX - this.x;
     const step = Math.min(Math.abs(dx), speed * dt);
     if (Math.abs(dx) < 1) {
@@ -393,7 +419,7 @@ export class Buddy {
     }
     switch (this.alertPhase) {
       case 'travel':
-        this.tickWalk(dt, displays, 1.4);
+        this.tickWalk(dt, displays, alert.speed ?? 1.4);
         if (this.targetX === null) {
           if (this.targetY !== null) {
             this.alertPhase = 'rise';
@@ -410,7 +436,7 @@ export class Buddy {
           this.pointer = { x: alert.target.x, y: alert.target.y };
           this.faceToward(alert.target.x);
         }
-        if (this.y > ty) this.y = Math.max(ty, this.y - RISE_SPEED * dt);
+        if (this.y > ty) this.y = Math.max(ty, this.y - RISE_SPEED * Math.max(1, this.curFactor, (alert.speed ?? 1.4) / 1.4) * dt);
         if (this.y <= ty + 0.5) {
           this.y = ty;
           this.alertPhase = 'show';

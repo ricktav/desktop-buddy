@@ -54,6 +54,9 @@ function usage() {
   buddy alert <message> [--level info|warn|error] [--target active|here|mouse] [--duration SEC] [--buddy NAME]
   buddy say <message> [--duration SEC] [--buddy NAME]
   buddy guide <x> <y> <message> [--duration SEC] [--buddy NAME]
+  buddy speed [slow|normal|fast|turbo|N]   show or set how fast buddies move   [--for SECONDS] [--buddy NAME]
+                                         e.g.  buddy speed fast   |   buddy speed turbo --for 30   |   buddy speed 3 --buddy Jack
+  (alert and guide also take  --hurry  or  --speed N  to make the buddy run to the target)
   buddy timer <duration> [name...]       e.g. buddy timer 25m Pomodoro   (--buddy NAME to pick who cheers)
   buddy timers
   buddy cancel <timer-id>
@@ -260,6 +263,8 @@ async function main() {
     level: opts.level,
     duration: opts.duration !== undefined ? Number(opts.duration) : undefined,
     buddy: opts.buddy,
+    ...(opts.hurry ? { hurry: true } : {}),
+    ...(opts.speed !== undefined && opts.speed !== true ? { speed: Number(opts.speed) } : {}),
   };
   let r;
   switch (cmd) {
@@ -275,6 +280,13 @@ async function main() {
       const [x, y, ...msg] = rest;
       if (!msg.length || Number.isNaN(Number(x)) || Number.isNaN(Number(y))) return usage();
       r = await request('POST', '/guide', { message: msg.join(' '), x: Number(x), y: Number(y), ...common });
+      break;
+    }
+    case 'speed': {
+      const [v] = rest;
+      r = v === undefined
+        ? await request('GET', '/speed')
+        : await request('POST', '/speed', { factor: v, seconds: opts.for !== undefined ? Number(opts.for) : undefined, buddy: opts.buddy });
       break;
     }
     case 'timer': {

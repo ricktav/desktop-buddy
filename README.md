@@ -148,6 +148,29 @@ curl -X POST localhost:47821/guide -d '{"message":"Here","x":640,"y":320}'
 Set `api.token` in the config to require an `x-buddy-token` header (the CLI
 reads `BUDDY_TOKEN`). The server only listens on localhost.
 
+## Moving faster
+
+Buddies stroll at a relaxed pace by default. Ask for more speed whenever you like:
+
+```bash
+buddy speed                      # show the current speed and any boosts
+buddy speed fast                 # everyone, saved: slow (0.5×), normal, fast (2×), turbo (4×) or a number such as 2.5
+buddy speed turbo --for 30       # everyone, for 30 seconds, then back to the saved speed
+buddy speed 3 --buddy Jack       # only Jack, until you change it
+buddy speed normal --buddy Jack  # clear Jack's boost
+
+buddy alert "Build failed" --hurry    # the buddy runs to you (3×) for this one alert
+buddy guide 640 320 "Click here" --speed 5
+```
+
+In the menu-bar paw, *Movement speed* has the four presets (the choice is
+saved in `speedFactor` in the config), *Run for 30 seconds* and *Stop
+boosts*. Right-click a buddy for *Run fast for 30 s* for just that one. Over
+HTTP: `POST /speed {"factor":"fast","seconds":30,"buddy":"Jack"}` (seconds and
+buddy are optional) and `GET /speed`; alerts accept `"hurry": true` or
+`"speed": 5`. Legs animate faster as the buddy speeds up. The allowed range
+is 0.25× to 8×.
+
 ## Timers
 
 Start a countdown and the buddy celebrates when it ends: it runs to your
@@ -221,7 +244,8 @@ menu bar: *Open config file*; apply with *Reload config* or `buddy reload`).
   ],
   "idleSitAfter": 90,          // seconds idle before sitting
   "idleSleepAfter": 300,       // seconds idle before sleeping
-  "walkSpeed": 60,             // points per second
+  "walkSpeed": 60,             // points per second at normal speed
+  "speedFactor": 1,            // movement multiplier: 0.5 slow, 1 normal, 2 fast, 4 turbo
   "activeWindowPoll": 1.5,     // seconds between frontmost-window checks
   "bubbleSeconds": 12,         // default bubble lifetime
   "api": { "enabled": true, "port": 47821, "token": "" },

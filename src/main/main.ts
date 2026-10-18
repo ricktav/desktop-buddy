@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } from 'electron';
 import { cpSync, existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import type { AlertRequest, AppConfig } from '../shared/types';
+import { SPEED_PRESETS, type AlertRequest, type AppConfig } from '../shared/types';
 import { World } from '../sim/world';
 import { ActiveWindowTracker } from './activeWindow';
 import { startApi } from './api';
@@ -73,7 +73,7 @@ function startTimerFromMenu(ms: number, name: string): void {
 }
 
 function simConfig(c: AppConfig) {
-  return { idleSitAfter: c.idleSitAfter, idleSleepAfter: c.idleSleepAfter, walkSpeed: c.walkSpeed, bubbleSeconds: c.bubbleSeconds };
+  return { idleSitAfter: c.idleSitAfter, idleSleepAfter: c.idleSleepAfter, walkSpeed: c.walkSpeed, bubbleSeconds: c.bubbleSeconds, speedFactor: c.speedFactor };
 }
 
 function addBuddyFromEntry(entry: AppConfig['buddies'][number]): string {
@@ -154,6 +154,13 @@ async function reloadConfig(): Promise<void> {
   buildTray();
 }
 
+function setGlobalSpeed(factor: number): void {
+  cfg.speedFactor = factor;
+  saveConfig(cfg);
+  world.setConfig(simConfig(cfg));
+  buildTray();
+}
+
 function sendAlert(req: AlertRequest) {
   const b = world.alert(req);
   return b ? ({ ok: true, buddy: b.id } as const) : ({ ok: false, error: `buddy "${req.buddy}" not found` } as const);
@@ -191,6 +198,17 @@ function buildMenu(forBuddyId?: string): Menu {
     { type: 'separator' as const },
     { label: 'Pomodoro (25 min)', click: () => startTimerFromMenu(25 * 60_000, 'Pomodoro') },
     { label: 'Custom… (use: buddy timer 12m Name)', enabled: false },
+  ];
+  const speedItems = [
+    ...Object.entries(SPEED_PRESETS).map(([name, f]) => ({
+      label: `${name[0].toUpperCase()}${name.slice(1)} (${f}×)`,
+      type: 'radio' as const,
+      checked: Math.abs((cfg.speedFactor ?? 1) - f) < 0.01,
+      click: () => setGlobalSpeed(f),
+    })),
+    { type: 'separator' as const },
+    { label: 'Run for 30 seconds (4×)', click: () => { world.boostSpeed(4, 30); buildTray(); } },
+    { label: 'Stop boosts', click: () => { world.boostSpeed(1, null); buildTray(); } },
   ];
   const nstat = notifications?.status();
   const notifItems = [
@@ -237,6 +255,7 @@ function buildMenu(forBuddyId?: string): Menu {
           { label: `Pet ${forBuddy.name}`, click: () => forBuddy.pet(Date.now()) },
           ...(forBuddy.manifest.doubleClick ? [{ label: 'Do a trick', click: () => forBuddy.trick(Date.now()) }] : []),
           { label: 'Dismiss bubble', click: () => forBuddy.dismissBubble() },
+          { label: `Run fast for 30 s`, click: () => { world.boostSpeed(3, 30, forBuddy.id); } },
           { label: `Remove ${forBuddy.name}`, click: () => removeBuddyAndSave(forBuddy.id) },
           { type: 'separator' as const },
         ]
@@ -268,6 +287,7 @@ function buildMenu(forBuddyId?: string): Menu {
     { label: 'Install buddy folder…', click: () => void installBuddyFolder() },
     { label: 'Import buddy from clipboard (AI-made JSON)…', click: () => void importFromClipboard() },
     { type: 'separator' },
+    { label: 'Movement speed', submenu: speedItems },
     { label: running.length ? `Timers (${running.length} running)` : 'Timers', submenu: timerItems },
     { label: 'Notifications', submenu: notifItems },
     { type: 'separator' },
@@ -451,6 +471,17 @@ app.whenReady().then(async () => {
       },
       removeBuddy: (id) => ({ ok: removeBuddyAndSave(id) }),
       reload: reloadConfig,
+      setSpeed: ({ factor, seconds, buddy }) => {
+        if (buddy || seconds) {
+          const n = world.boostSpeed(factor, seconds ?? null, buddy);
+          if (buddy && n === 0) return { ok: false, error: `buddy "${buddy}" not found` };
+          buildTray();
+          return { ok: true, scope: buddy ? 'buddy' : 'temporary', affected: n };
+        }
+        setGlobalSpeed(factor);
+        return { ok: true, scope: 'global', affected: world.buddies.length };
+      },
+      getSpeed: () => ({ global: cfg.speedFactor ?? 1, boosts: world.speedBoosts() }),
       startTimer: (ms, name, buddy) => {
         const t = timers.start(ms, { name, buddy });
         world.alert({ message: `⏱ ${t.name}: ${timers.remainingLabel(t)} on the clock.`, target: 'here', duration: 4, buddy });

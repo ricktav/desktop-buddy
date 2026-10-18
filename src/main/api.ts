@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AlertRequest, TimerInfo } from '../shared/types';
+import { parseSpeed, type AlertRequest, type TimerInfo } from '../shared/types';
 
 export interface ApiHandlers {
   alert(req: AlertRequest): { ok: true; buddy: string } | { ok: false; error: string };
+  setSpeed(req: { factor: number; seconds?: number; buddy?: string }): { ok: true; scope: 'global' | 'temporary' | 'buddy'; affected: number } | { ok: false; error: string };
+  getSpeed(): { global: number; boosts: Array<{ buddy: string; factor: number; remainingSeconds: number | null }> };
   startTimer(durationMs: number, name?: string, buddy?: string): TimerInfo;
   listTimers(): Array<TimerInfo & { remaining: string }>;
   cancelTimer(id: string): boolean;
@@ -22,6 +24,8 @@ export interface ApiHandlers {
  *   POST /buddies {pack}
  *   DELETE /buddies/:id
  *   POST /reload
+ *   POST /speed    {factor|"slow"|"normal"|"fast"|"turbo", seconds?, buddy?}   (no seconds/buddy = everyone, saved)
+ *   GET  /speed
  *   POST /timer    {minutes | seconds | duration:"25m", name?, buddy?}
  *   GET  /timers
  *   DELETE /timers/:id
@@ -63,6 +67,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string |
       duration: typeof body.duration === 'number' ? body.duration : undefined,
       buddy: typeof body.buddy === 'string' ? body.buddy : undefined,
     };
+    if (typeof body.speed === 'number') alert.speed = parseSpeed(body.speed) ?? undefined;
+    if (body.hurry === true) alert.hurry = true;
     if (path === '/guide' || (typeof body.x === 'number' && typeof body.y === 'number')) {
       if (typeof body.x !== 'number' || typeof body.y !== 'number') return send(res, 400, { ok: false, error: '"x" and "y" are required' });
       alert.target = { x: body.x, y: body.y };
@@ -76,6 +82,15 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string |
     }
     const result = h.alert(alert);
     return send(res, result.ok ? 200 : 404, result);
+  }
+  if (method === 'GET' && path === '/speed') return send(res, 200, { ok: true, ...h.getSpeed() });
+  if (method === 'POST' && path === '/speed') {
+    const body = await readJson(req);
+    const factor = parseSpeed(body.factor ?? body.speed ?? body.preset);
+    if (factor === null) return send(res, 400, { ok: false, error: 'give "factor" as slow, normal, fast, turbo or a number between 0.25 and 8' });
+    const seconds = typeof body.seconds === 'number' && body.seconds > 0 ? body.seconds : undefined;
+    const result = h.setSpeed({ factor, seconds, buddy: typeof body.buddy === 'string' ? body.buddy : undefined });
+    return send(res, result.ok ? 200 : 404, result.ok ? { ...result, factor } : result);
   }
   if (method === 'POST' && (path === '/timer' || path === '/timers')) {
     const body = await readJson(req);

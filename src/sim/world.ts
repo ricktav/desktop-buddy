@@ -81,8 +81,30 @@ export class World {
       target,
       durationMs: seconds <= 0 ? null : seconds * 1000,
       cheer: req.cheer === true,
+      speed: req.speed ?? (req.hurry ? 3 : undefined),
     });
     return b;
+  }
+
+  /**
+   * Boost movement: for one buddy (by id or name) or all of them. `seconds` null keeps it
+   * until changed; factor 1 with null seconds clears it. Returns how many buddies it applied to.
+   */
+  boostSpeed(factor: number, seconds: number | null, ref?: string): number {
+    const targets = ref ? [this.findBuddy(ref)].filter((b): b is Buddy => b !== null) : this.buddies;
+    const now = this.now();
+    for (const b of targets) b.setBoost(factor, seconds, now);
+    return targets.length;
+  }
+
+  speedBoosts(): Array<{ buddy: string; factor: number; remainingSeconds: number | null }> {
+    const now = this.now();
+    const out: Array<{ buddy: string; factor: number; remainingSeconds: number | null }> = [];
+    for (const b of this.buddies) {
+      const info = b.boostInfo(now);
+      if (info) out.push({ buddy: b.name, ...info });
+    }
+    return out;
   }
 
   /** Advance the simulation. `dt` defaults to the wall-clock delta, capped. */

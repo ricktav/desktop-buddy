@@ -16,11 +16,14 @@ const server = startApi(0, 'secret', {
   addBuddy: async (ref) => (ref === 'bad' ? { ok: false, error: 'nope' } : { ok: true, id: ref + '-1' }),
   removeBuddy: () => ({ ok: true }),
   reload: async () => {},
+  setSpeed: (req) => { speedCalls.push(req); return req.buddy === 'ghost' ? { ok: false, error: 'buddy "ghost" not found' } : { ok: true, scope: req.buddy ? 'buddy' : req.seconds ? 'temporary' : 'global', affected: 1 }; },
+  getSpeed: () => ({ global: 2, boosts: [{ buddy: 'Biscuit', factor: 4, remainingSeconds: 12 }] }),
   startTimer: (ms, name, buddy) => { started.push({ ms, name, buddy }); return { id: 't1', name: name ?? 'Timer 1', endsAt: Date.now() + ms, durationMs: ms, buddy }; },
   listTimers: () => [{ id: 't1', name: 'Tea', endsAt: 0, durationMs: 60000, remaining: '0:59' }],
   cancelTimer: (id) => id === 't1',
 });
 const started = [];
+const speedCalls = [];
 await new Promise((r) => server.once('listening', r));
 const port = server.address().port;
 after(() => server.close());
@@ -76,4 +79,37 @@ test('parseDurationMs', () => {
   assert.equal(parseDurationMs('2'), 120_000);
   assert.equal(parseDurationMs('2 hours 5 minutes'), 125 * 60_000);
   assert.equal(parseDurationMs('soon'), null);
+});
+
+test('speed routes and CLI', async () => {
+  speedCalls.length = 0;
+  const g = await cli('speed', 'fast');
+  assert.match(g.stdout, /"scope": "global"/);
+  assert.match(g.stdout, /"factor": 2/);
+  await cli('speed', 'turbo', '--for', '30');
+  await cli('speed', '3x', '--buddy', 'Jack');
+  await cli('speed', 'normal', '--buddy', 'Jack');
+  assert.deepEqual(speedCalls, [
+    { factor: 2, seconds: undefined, buddy: undefined },
+    { factor: 4, seconds: 30, buddy: undefined },
+    { factor: 3, seconds: undefined, buddy: 'Jack' },
+    { factor: 1, seconds: undefined, buddy: 'Jack' },
+  ]);
+  const status = await cli('speed');
+  assert.match(status.stdout, /"global": 2/);
+  assert.match(status.stdout, /"remainingSeconds": 12/);
+  await assert.rejects(cli('speed', 'ludicrous'));
+  await assert.rejects(cli('speed', 'fast', '--buddy', 'ghost'));
+  const bad = await fetch(`http://127.0.0.1:${port}/speed`, { method: 'POST', headers: { 'x-buddy-token': 'secret' }, body: '{"factor":-1}' });
+  assert.equal(bad.status, 400);
+});
+
+test('alert --hurry and --speed reach the handler', async () => {
+  received.length = 0;
+  await cli('alert', 'Now!', '--hurry');
+  await cli('guide', '10', '20', 'There', '--speed', '5');
+  assert.equal(received[0].hurry, true);
+  assert.equal(received[0].message, 'Now!');
+  assert.equal(received[1].speed, 5);
+  assert.deepEqual(received[1].target, { x: 10, y: 20 });
 });

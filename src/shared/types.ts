@@ -153,6 +153,28 @@ export interface AlertRequest {
   buddy?: string;
   /** Celebrate: play the buddy's trick or happy animation with confetti while the bubble shows. */
   cheer?: boolean;
+  /** Travel speed multiplier for this trip (default 1.4). */
+  speed?: number;
+  /** Shortcut for a fast trip: the buddy runs (speed 3). */
+  hurry?: boolean;
+}
+
+/** Named movement speeds, as multipliers of the configured walk speed. */
+export const SPEED_PRESETS: Record<string, number> = { slow: 0.5, normal: 1, fast: 2, turbo: 4 };
+export const MIN_SPEED = 0.25;
+export const MAX_SPEED = 8;
+
+/** Accepts a preset name ("fast"), a number or a numeric string ("2.5", "3x"); clamps to a sane range. */
+export function parseSpeed(v: unknown): number | null {
+  let n: number;
+  if (typeof v === 'number') n = v;
+  else if (typeof v === 'string') {
+    const key = v.trim().toLowerCase();
+    if (key in SPEED_PRESETS) return SPEED_PRESETS[key];
+    n = Number(key.replace(/[x×]$/, ''));
+  } else return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(MAX_SPEED, Math.max(MIN_SPEED, n));
 }
 
 export interface TimerInfo {
@@ -215,6 +237,8 @@ export interface AppConfig {
   idleSleepAfter: number;
   /** Walking speed in DIP per second. */
   walkSpeed: number;
+  /** Multiplier applied to all movement (1 = normal; see SPEED_PRESETS). */
+  speedFactor: number;
   /** Seconds between active-window polls. */
   activeWindowPoll: number;
   /** Seconds a bubble stays by default. */
@@ -234,6 +258,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   idleSitAfter: 90,
   idleSleepAfter: 300,
   walkSpeed: 60,
+  speedFactor: 1,
   activeWindowPoll: 1.5,
   bubbleSeconds: 12,
   api: { enabled: true, port: 47821 },
