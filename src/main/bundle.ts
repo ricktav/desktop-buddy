@@ -10,7 +10,10 @@ export const REQUIRED_ANIMATIONS = ['idle', 'walk'];
 export const RECOMMENDED_ANIMATIONS = ['sit', 'sleep', 'watch', 'point', 'alert', 'happy', 'drag'];
 const FRAME_EXTENSIONS = new Set(['.svg', '.png', '.webp', '.gif']);
 const MAX_FRAME_BYTES = 300 * 1024;
+/** Photo-style packs ship raster frames, which are larger than vector ones. */
+const MAX_RASTER_FRAME_BYTES = 1024 * 1024;
 const MAX_TOTAL_BYTES = 6 * 1024 * 1024;
+const MAX_RASTER_TOTAL_BYTES = 40 * 1024 * 1024;
 const MAX_FRAMES_TOTAL = 150;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/;
@@ -100,6 +103,8 @@ export function validatePack(manifest: unknown, get: FileGetter): Report {
 
   let totalFrames = 0;
   let totalBytes = 0;
+  let hasRaster = false;
+  const sizes = new Map<string, string>();
   const seen = new Set<string>();
   for (const [name, def] of Object.entries(anims)) {
     if (!KNOWN_ANIMATIONS.includes(name)) warn(`animation "${name}" is not a known name and will only play if a trick uses it (known: ${KNOWN_ANIMATIONS.join(', ')})`);
@@ -136,12 +141,19 @@ export function validatePack(manifest: unknown, get: FileGetter): Report {
       seen.add(f);
       const bytes = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
       totalBytes += bytes;
-      if (bytes > MAX_FRAME_BYTES) err(`frame "${f}" is ${Math.round(bytes / 1024)} KB; the limit is ${MAX_FRAME_BYTES / 1024} KB. Simplify the drawing.`);
-      if (extname(f).toLowerCase() === '.svg') checkSvg(f, typeof data === 'string' ? data : data.toString('utf8'), fw, fh, r);
+      const ext = extname(f).toLowerCase();
+      const raster = ext !== '.svg';
+      if (raster) hasRaster = true;
+      const limit = raster ? MAX_RASTER_FRAME_BYTES : MAX_FRAME_BYTES;
+      if (bytes > limit) err(`frame "${f}" is ${Math.round(bytes / 1024)} KB; the limit is ${limit / 1024} KB. ${raster ? 'Use smaller frames (256x256 is plenty) or WebP.' : 'Simplify the drawing.'}`);
+      if (ext === '.svg') checkSvg(f, typeof data === 'string' ? data : data.toString('utf8'), fw, fh, r);
+      else if (ext === '.png') checkPng(f, typeof data === 'string' ? Buffer.from(data, 'latin1') : data, fw, fh, r, sizes);
     }
   }
   if (totalFrames > MAX_FRAMES_TOTAL) err(`${totalFrames} frames in total; the limit is ${MAX_FRAMES_TOTAL}`);
-  if (totalBytes > MAX_TOTAL_BYTES) err(`pack is ${(totalBytes / 1048576).toFixed(1)} MB; the limit is ${MAX_TOTAL_BYTES / 1048576} MB`);
+  const totalLimit = hasRaster ? MAX_RASTER_TOTAL_BYTES : MAX_TOTAL_BYTES;
+  if (totalBytes > totalLimit) err(`pack is ${(totalBytes / 1048576).toFixed(1)} MB; the limit is ${totalLimit / 1048576} MB`);
+  if (new Set(sizes.values()).size > 1) warn(`PNG frames have different sizes (${[...new Set(sizes.values())].join(', ')}); every frame should be the same size so the buddy does not jump`);
 
   const missing = RECOMMENDED_ANIMATIONS.filter((a) => !anims[a]);
   if (missing.length) r.info.push(`no ${missing.join(', ')} animation: those moments will fall back to "idle"`);
@@ -171,6 +183,25 @@ export function validatePack(manifest: unknown, get: FileGetter): Report {
 
   r.info.push(`${Object.keys(anims).length} animations, ${totalFrames} frames, ${(totalBytes / 1024).toFixed(0)} KB`);
   return r;
+}
+
+/** Read the IHDR of a PNG: size and whether it can carry transparency. */
+export function pngInfo(buf: Buffer): { width: number; height: number; alpha: boolean } | null {
+  if (buf.length < 33 || buf.readUInt32BE(0) !== 0x89504e47 || buf.readUInt32BE(4) !== 0x0d0a1a0a || buf.toString('latin1', 12, 16) !== 'IHDR') return null;
+  const colorType = buf[25];
+  const hasTrns = buf.includes(Buffer.from('tRNS'));
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), alpha: colorType === 4 || colorType === 6 || hasTrns };
+}
+
+function checkPng(file: string, buf: Buffer, fw: number, fh: number, r: Report, sizes: Map<string, string>): void {
+  const info = pngInfo(buf);
+  if (!info) {
+    r.errors.push(`${file}: not a valid PNG file`);
+    return;
+  }
+  sizes.set(file, `${info.width}x${info.height}`);
+  if (!info.alpha) r.warnings.push(`${file}: has no transparency; the buddy will be drawn on a solid rectangle. Remove the background (see docs/PHOTO-BUDDY.md).`);
+  if (Math.abs(info.width / info.height - fw / fh) > 0.02) r.warnings.push(`${file}: is ${info.width}x${info.height} but frameWidth x frameHeight is ${fw}x${fh}; the image will be stretched`);
 }
 
 function checkSvg(file: string, text: string, fw: number, fh: number, r: Report): void {

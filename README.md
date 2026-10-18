@@ -262,6 +262,13 @@ menu bar: *Open config file*; apply with *Reload config* or `buddy reload`).
 Reminders accept `every` (`90s`, `45m`, `2h`) or `at` (`HH:MM`, optional
 `days` with 0 = Sunday), plus the same `level` and `target` fields as alerts.
 
+## Photo-realistic buddies
+
+Buddies can also be made of real or AI-generated pictures. [docs/PHOTO-BUDDY.md](docs/PHOTO-BUDDY.md)
+has a brief you can hand to an image- or video-generation tool and
+`node scripts/photo-pack.mjs` turns the pictures into a pack (background
+removal, scaling, feet alignment, manifest, validation).
+
 ## Adding your own buddy
 
 **With an AI:** copy the prompt in [docs/LLM-PROMPT.md](docs/LLM-PROMPT.md)

@@ -141,7 +141,7 @@ Trick effects: `{"type":"confetti"}`, `{"type":"bats","count":5}`,
 ### Limits the validator enforces
 
 - Frame file names: letters, digits, `.`, `_`, `-` only, ending in `.svg`, `.png`, `.webp` or `.gif`.
-- At most 300 KB per frame, 150 frames and 6 MB per buddy.
+- At most 300 KB per SVG frame, 150 frames and 6 MB per buddy. Raster (PNG/WebP) frames may be 1 MB each and 40 MB per pack; for photo-style buddies see [PHOTO-BUDDY.md](PHOTO-BUDDY.md).
 - SVG frames may not contain scripts, `foreignObject`, event handlers, or links to anything outside the file.
 
 ## Using PNG images (photos, pixel art)
