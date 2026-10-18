@@ -5,7 +5,7 @@ walks over to whatever window you are working in and watches it, sits down
 when you go idle, falls asleep if you stay away, and delivers alerts and
 on-screen guidance from your scripts, tools and timed reminders.
 
-Built with Electron + TypeScript for macOS. Sixteen buddies ship in the box,
+Built with Electron + TypeScript for macOS. Seventeen buddies ship in the box,
 and you can have any AI design more for you (see
 [Make your own buddy with an AI](docs/CREATE-A-BUDDY.md)).
 
@@ -26,6 +26,7 @@ and you can have any AI design more for you (see
 | `dna` | Helix | Chibi DNA double helix in glossy purple and pink: a round head, a body that really twists around base-pair rungs, tendril arms and legs; double-click and it unzips and replicates |
 | `dna-strand` | Strand | The headless DNA: just the twisting purple and pink helix with its face drawn on the strands; double-click and it unzips into RNA |
 | `peacock` | Plume | Chibi peacock with a shimmering blue body and a trailing train of eye-spot feathers that fans out when it is excited |
+| `toddler-trike` | Tilly | Cartoon toddler girl with pigtails and bows pedalling a pink tricycle (her legs follow the pedals); rings her bell on alerts and pops a wheelie on double-click |
 | `capybara` | Capy | Calm capybara with a blunt snout; double-click and it relaxes with a yuzu on its head and rising steam |
 
 **Choosing buddies.** Click the paw in the menu bar and open *Buddies*: each
