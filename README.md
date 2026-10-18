@@ -5,7 +5,7 @@ walks over to whatever window you are working in and watches it, sits down
 when you go idle, falls asleep if you stay away, and delivers alerts and
 on-screen guidance from your scripts, tools and timed reminders.
 
-Built with Electron + TypeScript for macOS. Seventeen buddies ship in the box,
+Built with Electron + TypeScript for macOS and Windows ([Windows guide](docs/WINDOWS.md)). Seventeen buddies ship in the box,
 and you can have any AI design more for you (see
 [Make your own buddy with an AI](docs/CREATE-A-BUDDY.md)).
 
@@ -44,6 +44,8 @@ Your selection is saved to the config file.
 npm install
 npm start          # builds and launches; the buddy appears, a paw icon lands in the menu bar
 ```
+
+**Windows:** see [docs/WINDOWS.md](docs/WINDOWS.md) (no permissions needed; includes a test checklist).
 
 First launch on macOS asks for two permissions. Both are needed so the
 buddy can see which window is in front:
@@ -357,5 +359,4 @@ Layout:
 - `src/renderer/` draws the buddies from snapshots sent at 30 fps, handles hover/click/drag and click-through toggling.
 - `buddies/` bundled packs. `bin/buddy.js` CLI.
 
-Other platforms: everything except active-window tracking is cross-platform.
-Add a provider in `src/main/activeWindow.ts` for Windows or Linux.
+Platforms: macOS and Windows have full support (active-window tracking in `src/main/activeWindow.ts`, notifications in `src/main/notifications.ts`). On Linux everything except active-window tracking and notification watching works; add a provider in `src/main/activeWindow.ts`.

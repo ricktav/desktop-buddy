@@ -190,6 +190,8 @@ export interface TimerInfo {
 export interface WatchedApp {
   /** macOS bundle identifier as stored by Notification Center, e.g. net.whatsapp.WhatsApp. */
   bundleId: string;
+  /** Windows: case-insensitive fragments of the app's notification id (AppUserModelID), e.g. "WhatsApp". */
+  windowsIds?: string[];
   /** Friendly name the buddy uses. */
   label: string;
 }
@@ -268,7 +270,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   notifications: {
     enabled: true,
     apps: [
-      { bundleId: 'net.whatsapp.WhatsApp', label: 'WhatsApp' },
+      { bundleId: 'net.whatsapp.WhatsApp', label: 'WhatsApp', windowsIds: ['WhatsApp'] },
       { bundleId: 'desktop.WhatsApp', label: 'WhatsApp' },
       { bundleId: 'WhatsApp', label: 'WhatsApp' },
     ],

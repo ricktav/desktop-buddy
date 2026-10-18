@@ -65,7 +65,9 @@ function usage() {
   buddy add <pack-folder-name-or-path>
   buddy remove <buddy-id>
   buddy reload
-  buddy service install|uninstall|restart|status   run Desktop Buddy in the background and at login (macOS)
+  buddy service install|uninstall|restart|status   run Desktop Buddy in the background and at login (macOS launchd, Windows Startup folder)
+  buddy start | stop                     start Desktop Buddy detached from this terminal / ask the running app to quit
+  buddy logs                             show where the log file is and its last lines
   buddy diagnose                         check WhatsApp/notification watching step by step
   buddy validate <folder|file.json|->    check a buddy (folder or single-file bundle; - reads stdin) and list problems
   buddy import <folder|file.json|->      install a buddy and put it on screen   [--id name] [--force] [--no-add] [--dir path]
@@ -142,7 +144,7 @@ async function diagnose() {
   const { diagnose: run } = require(mod);
   const { DEFAULT_CONFIG } = require(path.join(PROJECT, 'dist', 'shared', 'types.js'));
   let cfg = DEFAULT_CONFIG.notifications;
-  const cfgPath = path.join(os.homedir(), 'Library', 'Application Support', 'desktop-buddy', 'config.json');
+  const cfgPath = path.join(bundleModule().userDataDir(), 'config.json');
   try {
     const user = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
     if (user.notifications) cfg = { ...cfg, ...user.notifications };
@@ -151,6 +153,8 @@ async function diagnose() {
     console.log(`config: ${cfgPath} (not found, using defaults)`);
   }
   for (const line of await run(cfg)) console.log(line);
+  const aw = path.join(PROJECT, 'dist', 'main', 'activeWindow.js');
+  if (fs.existsSync(aw)) for (const line of await require(aw).diagnoseActiveWindow()) console.log(line);
 }
 
 // ---- background service (macOS launchd user agent) ----------------------------
@@ -164,6 +168,87 @@ function electronBinary() {
     return require('electron'); // path to the Electron executable
   } catch {
     throw new Error(`electron is not installed in ${PROJECT}; run npm install first`);
+  }
+}
+
+// ---- start / stop / logs / Windows service ------------------------------------------------
+async function isRunning() {
+  try {
+    const r = await request('GET', '/state');
+    return r.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+function startDetached() {
+  const child = require('node:child_process').spawn(electronBinary(), [PROJECT], { detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+  return child.pid;
+}
+
+async function waitUntilRunning(seconds = 15) {
+  for (let i = 0; i < seconds * 2; i++) {
+    if (await isRunning()) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+async function startCmd() {
+  if (await isRunning()) return console.log('Desktop Buddy is already running.');
+  if (!fs.existsSync(path.join(PROJECT, 'dist', 'main', 'main.js'))) throw new Error('No build found. Run "npm run build" first.');
+  const pid = startDetached();
+  console.log((await waitUntilRunning()) ? `Started Desktop Buddy (pid ${pid}).` : `Launched (pid ${pid}) but the API did not answer yet; check: node bin/buddy.js logs`);
+}
+
+async function stopCmd() {
+  try {
+    await request('POST', '/quit');
+    console.log('Asked Desktop Buddy to quit.');
+  } catch {
+    console.log('Desktop Buddy is not running.');
+  }
+}
+
+function logsCmd() {
+  const file = path.join(bundleModule().userDataDir(), 'buddy.log');
+  console.log(`Log file: ${file}`);
+  if (!fs.existsSync(file)) return console.log('(no log yet: the app has not run)');
+  const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+  console.log(lines.slice(-40).join('\n'));
+}
+
+async function windowsService(sub) {
+  const st = require(path.join(PROJECT, 'dist', 'main', 'startup.js'));
+  switch (sub) {
+    case 'install': {
+      if (!fs.existsSync(path.join(PROJECT, 'dist', 'main', 'main.js'))) throw new Error('No build found. Run "npm run build" first.');
+      const file = st.installStartup(electronBinary(), PROJECT);
+      console.log(`Installed ${file}\nDesktop Buddy will start at login without a console window.`);
+      if (!(await isRunning())) {
+        startDetached();
+        console.log((await waitUntilRunning()) ? 'Started it now as well.' : 'Could not confirm it started; see: node bin/buddy.js logs');
+      }
+      return;
+    }
+    case 'uninstall':
+      console.log(st.removeStartup() ? 'Removed the start-at-login entry.' : 'Start at login was not installed.');
+      return;
+    case 'restart':
+      try {
+        await request('POST', '/restart');
+        console.log('Restarting (it reloads the new build).');
+      } catch {
+        startDetached();
+        console.log((await waitUntilRunning()) ? 'It was not running; started it.' : 'Could not start it; see: node bin/buddy.js logs');
+      }
+      return;
+    case 'status':
+      console.log(`Start at login: ${st.isStartupInstalled() ? 'installed (' + st.windowsStartupFile() + ')' : 'not installed'}\nRunning: ${(await isRunning()) ? 'yes' : 'no'}\nLog: ${path.join(bundleModule().userDataDir(), 'buddy.log')}`);
+      return;
+    default:
+      usage();
   }
 }
 
@@ -181,8 +266,9 @@ function serviceDomain() {
 }
 
 function service(sub) {
+  if (process.platform === 'win32') return windowsService(sub);
   if (process.platform !== 'darwin') {
-    console.error('buddy service only supports macOS (launchd). On other systems use your login-items / autostart mechanism to run: electron ' + PROJECT);
+    console.error('buddy service supports macOS (launchd) and Windows. On Linux, add this command to your session autostart: ' + electronBinary() + ' ' + PROJECT);
     process.exitCode = 1;
     return;
   }
@@ -256,6 +342,9 @@ function service(sub) {
 async function main() {
   const [cmd, ...rest] = positional;
   if (cmd === 'service') return service(rest[0]);
+  if (cmd === 'start') return startCmd();
+  if (cmd === 'stop') return stopCmd();
+  if (cmd === 'logs') return logsCmd();
   if (cmd === 'diagnose') return diagnose();
   if (cmd === 'validate') return rest[0] ? validateCmd(rest[0]) : usage();
   if (cmd === 'import') return rest[0] ? importCmd(rest[0]) : usage();

@@ -21,7 +21,10 @@ const server = startApi(0, 'secret', {
   startTimer: (ms, name, buddy) => { started.push({ ms, name, buddy }); return { id: 't1', name: name ?? 'Timer 1', endsAt: Date.now() + ms, durationMs: ms, buddy }; },
   listTimers: () => [{ id: 't1', name: 'Tea', endsAt: 0, durationMs: 60000, remaining: '0:59' }],
   cancelTimer: (id) => id === 't1',
+  restart: () => { lifecycle.push('restart'); },
+  quit: () => { lifecycle.push('quit'); },
 });
+const lifecycle = [];
 const started = [];
 const speedCalls = [];
 await new Promise((r) => server.once('listening', r));
@@ -112,4 +115,16 @@ test('alert --hurry and --speed reach the handler', async () => {
   assert.equal(received[0].message, 'Now!');
   assert.equal(received[1].speed, 5);
   assert.deepEqual(received[1].target, { x: 10, y: 20 });
+});
+
+test('POST /restart and /quit call the lifecycle handlers and need the token', async () => {
+  const noTok = await fetch(`http://127.0.0.1:${port}/quit`, { method: 'POST' });
+  assert.equal(noTok.status, 401);
+  assert.deepEqual(lifecycle, []);
+  for (const path of ['/restart', '/quit']) {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: 'POST', headers: { 'x-buddy-token': 'secret' } });
+    assert.equal(r.status, 200);
+  }
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(lifecycle, ['restart', 'quit']);
 });

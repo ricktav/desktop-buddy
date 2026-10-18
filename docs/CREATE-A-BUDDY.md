@@ -38,6 +38,7 @@ lists the problems.
 
 ```bash
 pbpaste | node bin/buddy.js import -        # straight from the clipboard (macOS)
+# PowerShell on Windows:  Get-Clipboard -Raw | node bin\buddy.js import -
 node bin/buddy.js import my-buddy.json      # from a file you saved
 node bin/buddy.js import ./my-buddy-folder  # from a folder (see below)
 ```

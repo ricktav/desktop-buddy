@@ -13,6 +13,9 @@ export interface ApiHandlers {
   addBuddy(ref: string): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
   removeBuddy(id: string): { ok: boolean };
   reload(): Promise<void>;
+  /** Relaunch / quit the app (used by `buddy service restart` and `buddy stop`). */
+  restart(): void;
+  quit(): void;
 }
 
 /**
@@ -53,6 +56,12 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string |
 
   if (method === 'GET' && (path === '/' || path === '/state')) return send(res, 200, { ok: true, ...(h.state() as object) });
   if (method === 'GET' && path === '/buddies') return send(res, 200, { ok: true, buddies: h.listBuddies() });
+  if (method === 'POST' && (path === '/restart' || path === '/quit')) {
+    send(res, 200, { ok: true });
+    if (path === '/restart') h.restart();
+    else h.quit();
+    return;
+  }
   if (method === 'POST' && path === '/reload') {
     await h.reload();
     return send(res, 200, { ok: true });

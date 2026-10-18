@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import type { NotificationsConfig, WatchedApp } from '../shared/types';
@@ -334,6 +334,159 @@ end tell`;
   return (await run('osascript', ['-e', script])).trim();
 }
 
+// ---- Windows: toast notifications are logged in wpndatabase.db -------------------
+
+export const WPN_DB_PATH = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Microsoft', 'Windows', 'Notifications', 'wpndatabase.db');
+
+/** Title and body from a toast's XML payload: the first two <text> elements of the binding. */
+export function parseToastXml(xml: string): { title: string | null; body: string | null } {
+  const texts: string[] = [];
+  for (const m of xml.matchAll(/<text(?![^>]*placement=["']attribution["'])[^>]*>([\s\S]*?)<\/text>/g)) {
+    const t = decodeXml(m[1]).trim();
+    if (t) texts.push(t);
+  }
+  return { title: texts[0] ?? null, body: texts.length > 1 ? texts.slice(1).join(' ') : null };
+}
+
+/** Does a notification's app id (e.g. "5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App") match any watched fragment? */
+export function toastAppMatches(primaryId: string | null | undefined, fragments: string[] | undefined): boolean {
+  if (!primaryId || !fragments?.length) return false;
+  const id = primaryId.toLowerCase();
+  return fragments.some((f) => f && id.includes(f.toLowerCase()));
+}
+
+/** Payload columns come back as text or bytes, UTF-8 or UTF-16. */
+export function decodePayload(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v instanceof Uint8Array) {
+    const buf = Buffer.from(v);
+    if (buf.length > 1 && (buf[1] === 0 || (buf[0] === 0xff && buf[1] === 0xfe))) return buf.toString('utf16le').replace(/^﻿/, '');
+    return buf.toString('utf8').replace(/^﻿/, '');
+  }
+  return '';
+}
+
+interface WpnRow { rid: number; app: string | null; payload: unknown }
+interface SqliteDb { prepare(sql: string): { all(...p: unknown[]): unknown[]; get(...p: unknown[]): unknown }; close(): void }
+
+/** Open the notification database directly, or a private copy of it when Windows holds it locked. */
+function openWpn(): { db: SqliteDb; done: () => void } {
+  const mod = loadSqlite();
+  if (!mod) throw new Error('Electron has no built-in SQLite (node:sqlite) in this version');
+  try {
+    const db = new mod.DatabaseSync(WPN_DB_PATH, { readOnly: true });
+    db.prepare('SELECT 1 FROM Notification LIMIT 1').get();
+    return { db, done: () => db.close() };
+  } catch {
+    const dir = mkdtempSync(join(tmpdir(), 'buddy-wpn-'));
+    for (const ext of ['', '-wal', '-shm']) {
+      try { copyFileSync(WPN_DB_PATH + ext, join(dir, 'wpn.db' + ext)); } catch { /* the -wal/-shm may not exist */ }
+    }
+    const db = new mod.DatabaseSync(join(dir, 'wpn.db'));
+    return { db, done: () => { db.close(); rmSync(dir, { recursive: true, force: true }); } };
+  }
+}
+
+function wpnQuery<T>(sql: string, ...params: unknown[]): T[] {
+  const { db, done } = openWpn();
+  try {
+    return db.prepare(sql).all(...params) as T[];
+  } finally {
+    done();
+  }
+}
+
+const WPN_SELECT = 'SELECT n.rowid AS rid, h.PrimaryId AS app, n.Payload AS payload FROM Notification n LEFT JOIN NotificationHandler h ON h.RecordId = n.HandlerId';
+
+export class WindowsNotificationWatcher {
+  private lastId: number | null = null;
+  private failed = false;
+  private retryAt = 0;
+  private warned = false;
+
+  constructor(private readonly apps: WatchedApp[]) {}
+
+  get available(): boolean {
+    return process.platform === 'win32' && this.apps.some((a) => a.windowsIds?.length) && !this.failed;
+  }
+
+  async poll(): Promise<IncomingNotification[]> {
+    if (process.platform !== 'win32' || !this.apps.some((a) => a.windowsIds?.length)) return [];
+    if (this.failed) {
+      if (Date.now() < this.retryAt) return [];
+      this.failed = false;
+      this.lastId = null;
+    }
+    try {
+      if (this.lastId === null) {
+        this.lastId = Number(wpnQuery<{ m: number }>('SELECT IFNULL(MAX(rowid), 0) AS m FROM Notification')[0]?.m ?? 0);
+        if (this.warned) console.log('Windows notification watcher is reading notifications now.');
+        return [];
+      }
+      const rows = wpnQuery<WpnRow>(`${WPN_SELECT} WHERE n.rowid > ? ORDER BY n.rowid`, this.lastId);
+      if (!rows.length) return [];
+      this.lastId = Math.max(this.lastId, ...rows.map((r) => Number(r.rid)));
+      const out: IncomingNotification[] = [];
+      for (const r of rows) {
+        const app = this.apps.find((a) => toastAppMatches(r.app, a.windowsIds));
+        if (!app) continue;
+        const { title, body } = parseToastXml(decodePayload(r.payload));
+        out.push({ label: app.label, title, body, unread: null, source: 'notification-center' });
+      }
+      return out;
+    } catch (err) {
+      if (!this.warned) {
+        console.warn(`Windows notification watcher paused: ${(err as Error).message.split('\n')[0]} (database: ${WPN_DB_PATH}). Run "buddy diagnose" for details. Retrying every minute.`);
+        this.warned = true;
+      }
+      this.failed = true;
+      this.retryAt = Date.now() + 60_000;
+      return [];
+    }
+  }
+}
+
+async function diagnoseWindows(cfg: NotificationsConfig): Promise<string[]> {
+  const out: string[] = [];
+  const ok = (m: string) => out.push(`✔ ${m}`);
+  const bad = (m: string) => out.push(`✘ ${m}`);
+  const info = (m: string) => out.push(`  ${m}`);
+  info(`watched apps: ${cfg.apps.filter((a) => a.windowsIds?.length).map((a) => `${a.label} (ids containing: ${a.windowsIds!.join(', ')})`).join('; ') || '(none have windowsIds)'}`);
+  out.push('', 'Windows notification database');
+  info(WPN_DB_PATH);
+  if (!loadSqlite()) {
+    bad('this runtime has no built-in SQLite; run "buddy diagnose" with the app\'s Electron (node_modules\\electron) or Node 22.13+');
+    return out;
+  }
+  try {
+    const n = wpnQuery<{ c: number }>('SELECT COUNT(*) AS c FROM Notification')[0]?.c ?? 0;
+    ok(`readable; ${n} notifications logged`);
+    const apps = wpnQuery<{ app: string | null; n: number; last: number }>(
+      'SELECT h.PrimaryId AS app, COUNT(*) AS n, MAX(n.rowid) AS last FROM Notification n LEFT JOIN NotificationHandler h ON h.RecordId = n.HandlerId GROUP BY h.PrimaryId ORDER BY last DESC LIMIT 20');
+    info('apps with logged notifications (most recent first):');
+    for (const a of apps) info(`   ${a.app ?? '(unknown)'}  (${a.n})`);
+    const watched = apps.filter((a) => cfg.apps.some((w) => toastAppMatches(a.app, w.windowsIds)));
+    if (watched.length) {
+      ok(`watched app(s) found: ${watched.map((w) => w.app).join(', ')}`);
+      const row = wpnQuery<WpnRow>(`${WPN_SELECT} WHERE h.PrimaryId = ? ORDER BY n.rowid DESC LIMIT 1`, watched[0].app)[0];
+      const xml = decodePayload(row?.payload);
+      const t = parseToastXml(xml);
+      ok(`latest record parses: title=${JSON.stringify(t.title)} body=${JSON.stringify(t.body)}`);
+      if (!t.title && !t.body) info('   payload starts with: ' + xml.slice(0, 160).replace(/\s+/g, ' '));
+    } else {
+      bad('none of the watched apps appear. If WhatsApp is listed above under another id, add a fragment of it to "windowsIds" in the config.');
+      info('   If it is not listed at all, WhatsApp is not posting toasts: Settings > System > Notifications > WhatsApp must be On.');
+    }
+  } catch (err) {
+    bad(`cannot read the database: ${(err as Error).message.split('\n')[0]}`);
+    try {
+      const cols = wpnQuery<{ name: string }>('SELECT name FROM sqlite_master WHERE type = \'table\'');
+      info('   tables: ' + cols.map((c) => c.name).join(', '));
+    } catch { /* ignore */ }
+  }
+  return out;
+}
+
 /**
  * Step-by-step check of every link in the notification chain, for the CLI
  * (`buddy diagnose`). Returns human-readable lines.
@@ -343,8 +496,9 @@ export async function diagnose(cfg: NotificationsConfig): Promise<string[]> {
   const ok = (m: string) => out.push(`✔ ${m}`);
   const bad = (m: string) => out.push(`✘ ${m}`);
   const info = (m: string) => out.push(`  ${m}`);
+  if (process.platform === 'win32') return diagnoseWindows(cfg);
   if (process.platform !== 'darwin') {
-    bad(`platform is ${process.platform}; notification watching only works on macOS`);
+    bad(`platform is ${process.platform}; notification watching only works on macOS and Windows`);
     return out;
   }
   const ctx = await launchContext();
@@ -416,18 +570,18 @@ export async function diagnose(cfg: NotificationsConfig): Promise<string[]> {
 /** Runs both providers on a timer and hands results to `onNotification`. */
 export class NotificationService {
   private timer: NodeJS.Timeout | null = null;
-  private nc: NotificationCenterWatcher;
+  private nc: NotificationCenterWatcher | WindowsNotificationWatcher;
   private dock: DockBadgeWatcher;
   private busy = false;
 
   constructor(private cfg: NotificationsConfig, private readonly onNotification: (n: IncomingNotification) => void) {
-    this.nc = new NotificationCenterWatcher(cfg.apps);
+    this.nc = process.platform === 'win32' ? new WindowsNotificationWatcher(cfg.apps) : new NotificationCenterWatcher(cfg.apps);
     this.dock = new DockBadgeWatcher(cfg.badgeApps);
   }
 
   start(): void {
     this.stop();
-    if (!this.cfg.enabled || process.platform !== 'darwin') return;
+    if (!this.cfg.enabled || (process.platform !== 'darwin' && process.platform !== 'win32')) return;
     this.timer = setInterval(() => void this.tick(), Math.max(1000, this.cfg.pollSeconds * 1000));
     void this.tick();
   }

@@ -27,6 +27,17 @@ export class OverlayWindows {
     this.dev = dev;
   }
 
+  /**
+   * Overlay bounds for a display. On Windows the window is made one pixel shorter than the
+   * screen: a borderless window that exactly covers a monitor can be treated as a full-screen
+   * app, which hides the taskbar and can disable transparency.
+   */
+  private boundsFor(d: Display) {
+    const b = { ...d.bounds };
+    if (process.platform === 'win32') b.height -= 1;
+    return b;
+  }
+
   sync(): void {
     const displays = screen.getAllDisplays();
     const ids = new Set(displays.map((d) => d.id));
@@ -39,7 +50,7 @@ export class OverlayWindows {
     for (const d of displays) {
       const existing = this.windows.get(d.id);
       if (existing) {
-        existing.setBounds(d.bounds);
+        existing.setBounds(this.boundsFor(d));
         existing.webContents.send('display', toDisplayInfo(d));
       } else {
         this.windows.set(d.id, this.create(d));
@@ -49,7 +60,7 @@ export class OverlayWindows {
 
   private create(d: Display): BrowserWindow {
     const win = new BrowserWindow({
-      ...d.bounds,
+      ...this.boundsFor(d),
       frame: false,
       transparent: true,
       hasShadow: false,
@@ -76,7 +87,7 @@ export class OverlayWindows {
     win.setAlwaysOnTop(true, 'screen-saver');
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     win.setIgnoreMouseEvents(true, { forward: true });
-    win.setBounds(d.bounds);
+    win.setBounds(this.boundsFor(d));
     const info = toDisplayInfo(d);
     if (this.dev) {
       win.webContents.on('console-message', (ev) => {
@@ -86,6 +97,9 @@ export class OverlayWindows {
     win.webContents.on('did-finish-load', () => {
       win.webContents.send('display', info);
       win.webContents.send('packs', this.getPacks());
+      // Windows creates the window at the primary display's DPI; set the bounds again once it exists
+      // so a window on a second monitor with a different scale gets the right size.
+      win.setBounds(this.boundsFor(d));
       win.showInactive();
     });
     void win.loadFile(join(__dirname, '..', 'renderer', 'index.html'), { query: { display: String(d.id) } });

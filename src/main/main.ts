@@ -8,10 +8,17 @@ import { startApi } from './api';
 import { configPath, loadConfig, saveConfig, userBuddiesDir } from './config';
 import { bundledBuddiesDir, installPackProtocol, listAvailablePacks, loadedPackManifests, loadPack, registerPackScheme } from './packs';
 import { ReminderScheduler } from './reminders';
+import { installFileLog } from './logfile';
+import { installStartup, isStartupInstalled, removeStartup } from './startup';
 import { formatReport, importBundleText } from './bundle';
 import { TimerManager, timerDoneMessage } from './timers';
 import { NotificationService, announcement, launchContext, appDisplayName, type LaunchContext } from './notifications';
 import { allDisplays, OverlayWindows } from './windows';
+
+// Windows and Linux launches have no terminal, so keep a log file next to the config.
+const LOG_FILE = installFileLog(app.getPath('userData'));
+// Virtual machines (for example Proxmox without GPU passthrough) may need software rendering.
+if (process.argv.includes('--disable-gpu') || process.env.BUDDY_DISABLE_GPU === '1') app.disableHardwareAcceleration();
 
 const DEV = process.argv.includes('--dev');
 /** `--capture=DIR` writes a PNG of every overlay window to DIR every 3 s (debugging aid). */
@@ -45,7 +52,11 @@ let overlays: OverlayWindows;
 let tray: Tray | null = null;
 let draggingId: string | null = null;
 let buddySeq = 0;
-const tracker = new ActiveWindowTracker(['Electron', 'Desktop Buddy']);
+const tracker = new ActiveWindowTracker(['Electron', 'Desktop Buddy'], {
+  scriptDir: join(app.getPath('userData'), 'probe'),
+  // The Windows probe reports physical pixels; Electron works in DIPs.
+  toDipRect: process.platform === 'win32' ? (r) => screen.screenToDipRect(null, r) : undefined,
+});
 const reminders = new ReminderScheduler((req) => world.alert(req));
 const timers = new TimerManager((t) => {
   console.log(`timer done: ${t.name}`);
@@ -225,26 +236,35 @@ function buildMenu(forBuddyId?: string): Menu {
       click: () => { cfg.notifications.showBody = !cfg.notifications.showBody; saveConfig(cfg); buildTray(); },
     },
     { type: 'separator' as const },
-    { label: `Notification Center: ${nstat?.notificationCenter ? 'reading' : 'unavailable (needs Full Disk Access)'}`, enabled: false },
-    ...(nstat?.notificationCenter
-      ? []
+    ...(process.platform === 'win32'
+      ? [
+          { label: `Windows notifications: ${nstat?.notificationCenter ? 'reading' : 'unavailable (run: buddy diagnose)'}`, enabled: false },
+          { label: 'Open Windows notification settings…', click: () => void shell.openExternal('ms-settings:notifications') },
+        ]
       : [
-          {
-            label: launchCtx?.responsibleApp
-              ? `Started from ${appDisplayName(launchCtx.responsibleApp)}: grant Full Disk Access to that app (or use the service)`
-              : 'Running as a service: grant Full Disk Access to Electron.app',
-            enabled: false,
-          },
-          {
-            label: 'Open Full Disk Access settings…',
-            click: () => void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'),
-          },
-          {
-            label: `Reveal the app to add there (${appDisplayName(launchCtx?.grantTo ?? appBundlePath())})…`,
-            click: () => shell.showItemInFolder(launchCtx?.grantTo ?? appBundlePath()),
-          },
+          { label: `Notification Center: ${nstat?.notificationCenter ? 'reading' : 'unavailable (needs Full Disk Access)'}`, enabled: false },
+          ...(nstat?.notificationCenter || process.platform !== 'darwin'
+            ? []
+            : [
+                {
+                  label: launchCtx?.responsibleApp
+                    ? `Started from ${appDisplayName(launchCtx.responsibleApp)}: grant Full Disk Access to that app (or use the service)`
+                    : 'Running as a service: grant Full Disk Access to Electron.app',
+                  enabled: false,
+                },
+                {
+                  label: 'Open Full Disk Access settings…',
+                  click: () => void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'),
+                },
+                {
+                  label: `Reveal the app to add there (${appDisplayName(launchCtx?.grantTo ?? appBundlePath())})…`,
+                  click: () => shell.showItemInFolder(launchCtx?.grantTo ?? appBundlePath()),
+                },
+              ]),
+          ...(process.platform === 'darwin'
+            ? [{ label: `Dock badges: ${nstat?.dockBadge ? 'watching ' + cfg.notifications.badgeApps.join(', ') : 'unavailable'}`, enabled: false }]
+            : []),
         ]),
-    { label: `Dock badges: ${nstat?.dockBadge ? 'watching ' + cfg.notifications.badgeApps.join(', ') : 'unavailable'}`, enabled: false },
     { label: `Apps: ${cfg.notifications.apps.map((a) => a.label).join(', ') || '(none, edit config)'}`, enabled: false },
   ];
   return Menu.buildFromTemplate([
@@ -298,7 +318,20 @@ function buildMenu(forBuddyId?: string): Menu {
     },
     { label: 'Test cheer', click: () => world.alert({ message: '🎉 Hooray! (test)', level: 'warn', target: 'active', duration: 0, cheer: true }) },
     { type: 'separator' },
+    ...(process.platform === 'win32'
+      ? [{
+          label: 'Start at login',
+          type: 'checkbox' as const,
+          checked: isStartupInstalled(),
+          click: () => {
+            if (isStartupInstalled()) removeStartup();
+            else installStartup(process.execPath, app.isPackaged ? null : app.getAppPath());
+            buildTray();
+          },
+        }]
+      : []),
     { label: 'Open config file', click: () => void shell.openPath(configPath()) },
+    { label: 'Open log file', click: () => void shell.openPath(LOG_FILE) },
     { label: 'Open buddies folder', click: () => void shell.openPath(userBuddiesDir()) },
     { label: 'Reload config', click: () => void reloadConfig() },
     { type: 'separator' },
@@ -369,16 +402,23 @@ function appBundlePath(): string {
 }
 
 function trayIcon() {
-  const p = join(__dirname, '..', 'assets', 'trayTemplate.png');
-  const img = existsSync(p) ? nativeImage.createFromPath(p) : nativeImage.createEmpty();
-  img.setTemplateImage(true);
-  return img;
+  if (process.platform === 'darwin') {
+    const p = join(__dirname, '..', 'assets', 'trayTemplate.png');
+    const img = existsSync(p) ? nativeImage.createFromPath(p) : nativeImage.createEmpty();
+    img.setTemplateImage(true);
+    return img;
+  }
+  // Windows and Linux trays are not monochrome-aware: use the coloured paw (tray@2x.png is picked up automatically).
+  const p = join(__dirname, '..', 'assets', 'tray.png');
+  return existsSync(p) ? nativeImage.createFromPath(p) : nativeImage.createEmpty();
 }
 
 function buildTray(): void {
   if (!tray) {
     tray = new Tray(trayIcon());
     tray.setToolTip('Desktop Buddy');
+    // Windows shows the menu on right-click only; make a left click open it too.
+    if (process.platform === 'win32') tray.on('click', () => tray?.popUpContextMenu());
   }
   tray.setContextMenu(buildMenu());
 }
@@ -428,6 +468,7 @@ app.whenReady().then(async () => {
     systemPreferences.isTrustedAccessibilityClient(true);
   }
 
+  console.log(`Desktop Buddy ${app.getVersion()} on ${process.platform} ${process.arch}, Electron ${process.versions.electron}; log: ${LOG_FILE}`);
   launchCtx = await launchContext();
   console.log(
     launchCtx.viaLaunchd
@@ -471,6 +512,8 @@ app.whenReady().then(async () => {
       },
       removeBuddy: (id) => ({ ok: removeBuddyAndSave(id) }),
       reload: reloadConfig,
+      restart: () => setTimeout(() => { app.relaunch(); app.exit(0); }, 200),
+      quit: () => setTimeout(() => app.quit(), 200),
       setSpeed: ({ factor, seconds, buddy }) => {
         if (buddy || seconds) {
           const n = world.boostSpeed(factor, seconds ?? null, buddy);
