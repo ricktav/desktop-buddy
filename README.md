@@ -5,7 +5,7 @@ walks over to whatever window you are working in and watches it, sits down
 when you go idle, falls asleep if you stay away, and delivers alerts and
 on-screen guidance from your scripts, tools and timed reminders.
 
-Built with Electron + TypeScript for macOS. Twelve buddies ship in the box,
+Built with Electron + TypeScript for macOS. Thirteen buddies ship in the box,
 and you can have any AI design more for you (see
 [Make your own buddy with an AI](docs/CREATE-A-BUDDY.md)).
 
@@ -22,6 +22,7 @@ and you can have any AI design more for you (see
 | `pumpkin` | Jack | Halloween jack-o'-lantern on vine legs with a flickering candle that flares when alerting |
 | `duckling` | Pip | Natural, downy duckling with soft shading and brown markings; hops and flaps on double-click |
 | `rubber-duck` | Squeaky | Glossy yellow rubber bath duck floating on a puddle; double-click squeezes it for a SQUEAK |
+| `dr-josie` | Dr. Josie | Chibi scientist with long wavy golden hair, violet eyes, white lab coat and a red shield emblem; test tube, glasses, trophy and a virus under a glass dome; superhero hop on double-click |
 | `capybara` | Capy | Calm capybara with a blunt snout; double-click and it relaxes with a yuzu on its head and rising steam |
 
 **Choosing buddies.** Click the paw in the menu bar and open *Buddies*: each

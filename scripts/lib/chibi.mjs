@@ -152,10 +152,10 @@ export function humanAnimations(st, o = {}) {
     watch: {
       fps: 1.5,
       frames: [
-        S({ eyes: 'up', armL: [-10, 22], armR: [10, 22] }),
-        S({ eyes: 'up', tilt: -5, armL: [-10, 22], armR: [10, 22] }),
-        S({ eyes: 'up', armL: [-10, 22], armR: [10, 22] }),
-        S({ eyes: 'up', tilt: 5, armL: [-10, 22], armR: [10, 22] }),
+        S({ ...(o.watch ?? {}), eyes: 'up', armL: [-10, 22], armR: [10, 22] }),
+        S({ ...(o.watch ?? {}), eyes: 'up', tilt: -5, armL: [-10, 22], armR: [10, 22] }),
+        S({ ...(o.watch ?? {}), eyes: 'up', armL: [-10, 22], armR: [10, 22] }),
+        S({ ...(o.watch ?? {}), eyes: 'up', tilt: 5, armL: [-10, 22], armR: [10, 22] }),
       ],
     },
     point: {
