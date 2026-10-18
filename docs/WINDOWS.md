@@ -19,7 +19,13 @@ CLI). Only the OS-specific parts differ:
 
 ## Install and run (from source)
 
-Prerequisites: [Node.js 22+](https://nodejs.org) and Git. In PowerShell:
+Prerequisites: [Node.js 22+](https://nodejs.org), Git, and on a fresh Windows install the
+[Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+(`winget install Microsoft.VCRedist.2015+.x64`). Without it `npm start` fails with
+"Cannot find native binding" / "The specified module could not be found". On Proxmox set the
+VM's CPU type to `host`. If the repository is private and `git clone` asks for a password,
+sign in through the browser popup (Git Credential Manager) or use `gh auth login`.
+In PowerShell:
 
 ```powershell
 git clone https://github.com/ricktav/desktop-buddy.git
