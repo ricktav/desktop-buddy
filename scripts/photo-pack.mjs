@@ -33,6 +33,8 @@ Options
                        Images that already have real transparency are left alone.
   --tolerance <0-255>  how far from the key colour counts as background (default 60, soft edge adds 40)
   --erode <px>         shrink the cut-out by this many pixels to hide halos (default 1)
+  --keep-holes         keep enclosed pockets of the background colour (for characters with green/white parts)
+  --frame-scale <f=x,..> multiply one frame's size, e.g. idle-1=1.45 when the generator drew that image smaller
   --registered         the character stays at the same spot in every image (video frames, one fixed
                        camera): keep relative positions instead of re-centring each frame
   --facing <right|left> which way the artwork faces (default right)
@@ -58,7 +60,7 @@ Options
 
 function parseArgs(argv) {
   const o = { _: [], key: 'auto', tolerance: 60, erode: 1, facing: 'right', size: '256', fill: 0.88, display: 128, padBottom: 8, format: 'png', quality: 90 };
-  const flags = new Set(['registered', 'install', 'force', 'help']);
+  const flags = new Set(['registered', 'install', 'force', 'help', 'keepHoles']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) { o._.push(a); continue; }
@@ -148,7 +150,7 @@ function hasRealAlpha({ w, h, d }) {
  * highlight inside the character survives. Edge pixels get a soft alpha and the key colour is
  * unmixed from them (c = a*F + (1-a)*K).
  */
-export function keyOut(img, mode, tolerance, erode) {
+export function keyOut(img, mode, tolerance, erode, keepHoles = false) {
   const { w, h, d } = img;
   if (mode === 'none') return { ...img, keyed: false };
   if (mode === 'auto' && hasRealAlpha(img)) return { ...img, keyed: false, note: 'already transparent' };
@@ -156,14 +158,31 @@ export function keyOut(img, mode, tolerance, erode) {
   if (!K) throw new Error(`--key: unknown mode "${mode}"`);
   const lo = tolerance, hi = tolerance + 40;
   const dist = new Float32Array(w * h);
+  const km = (K[0] + K[1] + K[2]) / 3;
+  const kv = [K[0] - km, K[1] - km, K[2] - km];
+  const kc = Math.hypot(...kv);
   for (let p = 0; p < w * h; p++) {
     const i = p * 4;
     dist[p] = Math.hypot(d[i] - K[0], d[i + 1] - K[1], d[i + 2] - K[2]) / Math.sqrt(3);
+    // A saturated key colour (green screen) also shows up darker where the subject casts a shadow
+    // on it. Same hue, different brightness: count that as background too. Greys and blacks have
+    // no chroma, so dark eyes and noses are safe.
+    if (kc > 60) {
+      const m = (d[i] + d[i + 1] + d[i + 2]) / 3;
+      const c0 = d[i] - m, c1 = d[i + 1] - m, c2 = d[i + 2] - m;
+      const cm = Math.hypot(c0, c1, c2);
+      if (cm > 0) {
+        const cos = (c0 * kv[0] + c1 * kv[1] + c2 * kv[2]) / (cm * kc);
+        if (cos > 0.96 && cm / kc > 0.4 && cm / kc < 1.6) dist[p] = Math.min(dist[p], lo * 0.5);
+      }
+    }
   }
   // Region of background: connected to the border and closer than `hi`.
   const bg = new Uint8Array(w * h);
   const stack = [];
   const push = (x, y) => { const p = y * w + x; if (!bg[p] && dist[p] < hi) { bg[p] = 1; stack.push(p); } };
+  // Pockets of pure key colour (the gap between the legs) are background too, unless --keep-holes.
+  if (!keepHoles) for (let p = 0; p < w * h; p++) if (dist[p] < lo) { bg[p] = 1; stack.push(p); }
   for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
   for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
   while (stack.length) {
@@ -270,14 +289,16 @@ export async function run(argv) {
   const canvas = parseSize(o.size);
   const facing = o.facing ?? meta.facing ?? 'right';
 
+  const frameScales = { ...(meta.frameScale ?? {}), ...Object.fromEntries((o.frameScale ?? '').split(',').filter(Boolean).map((p) => p.split('=')).map(([k, v]) => [k.replace(/\.[^.]+$/, ''), Number(v)])) };
+
   // 1. decode and cut out
   const cut = [];
   for (const f of frames) {
-    const img = keyOut(await loadRgba(f.source), o.key, o.tolerance, o.erode);
+    const img = keyOut(await loadRgba(f.source), o.key, o.tolerance, o.erode, !!o.keepHoles);
     const box = alphaBox(img);
     if (!box) throw new Error(`${f.name}: nothing left after removing the background. Try --key none, --tolerance, or a different --key colour.`);
     if (!img.keyed && o.key === 'auto' && !img.note) console.warn(`${f.name}: kept as is (no background removed)`);
-    cut.push({ ...f, img, box });
+    cut.push({ ...f, img, box, fs: frameScales[f.name.replace(/\.[^.]+$/, '')] ?? 1 });
   }
 
   // 2. one scale for everything
@@ -289,15 +310,15 @@ export async function run(argv) {
     const dims = new Set(cut.map((c) => `${c.img.w}x${c.img.h}`));
     if (dims.size > 1) console.warn(`--registered expects all images to be the same size, got ${[...dims].join(', ')}`);
   }
-  const maxW = Math.max(...cut.map((c) => (union ? union.w : c.box.w)));
-  const maxH = Math.max(...cut.map((c) => (union ? union.h : c.box.h)));
+  const maxW = Math.max(...cut.map((c) => (union ? union.w : c.box.w * c.fs)));
+  const maxH = Math.max(...cut.map((c) => (union ? union.h : c.box.h * c.fs)));
   const availW = canvas.w * o.fill, availH = (canvas.h - o.padBottom) * o.fill;
   const scale = Math.min(availW / maxW, availH / maxH);
 
   // 3. place every frame: feet on the baseline, centred (or registered)
   for (const c of cut) {
     const crop = clampBox(union ?? c.box, c.img);
-    const comp = await composeFrame(c.img, crop, scale, canvas, o.shadow, o.padBottom);
+    const comp = await composeFrame(c.img, crop, scale * c.fs, canvas, o.shadow, o.padBottom);
     const file = `${c.anim}-${c.n}.${o.format}`;
     const target = o.format === 'webp' ? comp.webp({ quality: o.quality, alphaQuality: 100 }) : comp.png({ compressionLevel: 9 });
     await target.toFile(join(outDir, file));
@@ -311,7 +332,7 @@ export async function run(argv) {
     const list = cut.filter((c) => c.anim === a).sort((p, q) => p.n - q.n).map((c) => c.file);
     animations[a] = { frames: list, fps: fpsOverride[a] ?? meta.fps?.[a] ?? DEFAULT_FPS[a] };
   }
-  const { fps: _fps, ...metaRest } = meta;
+  const { fps: _fps, frameScale: _fs, ...metaRest } = meta;
   const manifest = {
     name,
     frameWidth: canvas.w,

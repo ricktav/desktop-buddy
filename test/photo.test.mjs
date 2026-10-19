@@ -27,9 +27,9 @@ async function inputDir(bg, shots) {
   return dir;
 }
 
-test('keyOut removes the border background but keeps an interior hole of the same colour', async () => {
+test('keyOut with keepHoles removes the border background but keeps an interior hole of the same colour', async () => {
   const buf = await sharp(await fake('#00ff00')).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const out = keyOut({ w: buf.info.width, h: buf.info.height, d: buf.data }, 'auto', 60, 1);
+  const out = keyOut({ w: buf.info.width, h: buf.info.height, d: buf.data }, 'auto', 60, 1, true);
   const alphaAt = (x, y) => out.d[(y * out.w + x) * 4 + 3];
   assert.equal(alphaAt(5, 5), 0, 'corner is transparent');
   assert.equal(alphaAt(180, 240), 255, 'body is opaque');
@@ -130,4 +130,27 @@ test('--split cuts a sheet into numbered single files', async () => {
   const dir = join(mkdtempSync(join(tmpdir(), 'buddy-split-out-')), 'raw');
   await quiet(() => run(['--sheet', sheet, '--grid', '2x1', '--layout', 'idle:1,walk:1', '--split', dir]));
   assert.deepEqual(readdirSync(dir).sort(), ['idle-1.png', 'walk-1.png']);
+});
+
+test('keyOut also removes enclosed pockets of background and darker shadows of it, but not black details', async () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="100%" height="100%" fill="#0cc80c"/>
+    <ellipse cx="150" cy="260" rx="90" ry="10" fill="#0a7a0a"/>
+    <rect x="80" y="60" width="140" height="150" fill="#d9a066"/><rect x="130" y="150" width="40" height="60" fill="#0cc80c"/>
+    <circle cx="110" cy="100" r="9" fill="#050505"/></svg>`;
+  const buf = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const out = keyOut({ w: buf.info.width, h: buf.info.height, d: buf.data }, 'auto', 60, 0);
+  const a = (x, y) => out.d[(y * out.w + x) * 4 + 3];
+  assert.equal(a(150, 180), 0, 'pocket between the legs is transparent');
+  assert.equal(a(150, 260), 0, 'the dark green shadow on the screen is transparent');
+  assert.equal(a(110, 100), 255, 'the black eye stays');
+  assert.equal(a(100, 120), 255, 'the body stays');
+});
+
+test('--frame-scale resizes one frame relative to the others', async () => {
+  const dir = await inputDir('#00ff00', { 'idle-1.png': { w: 60, h: 40 }, 'idle-2.png': {}, 'walk-1.png': {}, 'walk-2.png': {} });
+  const out = join(mkdtempSync(join(tmpdir(), 'buddy-photo-out-')), 'fs');
+  await quiet(() => run([dir, '--name', 'FS', '--out', out, '--key', 'green', '--frame-scale', 'idle-1=2']));
+  const wide = async (f) => (await sharp(join(out, f)).trim({ threshold: 5 }).metadata()).width;
+  const a = await wide('idle-1.png'), b = await wide('idle-2.png');
+  assert.ok(Math.abs(a - b) < 6, `idle-1 (${a}) now matches idle-2 (${b})`);
 });

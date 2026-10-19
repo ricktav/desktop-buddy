@@ -30,6 +30,10 @@ for (const pack of packs) {
       for (const f of def.frames) {
         const file = join(dir, f);
         assert.ok(existsSync(file), `${pack}/${a}: missing ${f}`);
+        if (!f.endsWith('.svg')) {
+          assert.ok(statSync(file).size > 100, `${pack}/${f} looks empty`);
+          continue;
+        }
         const svg = readFileSync(file, 'utf8');
         assert.match(svg, /^<svg /, `${pack}/${f} is not an SVG`);
         assert.match(svg, /<\/svg>\s*$/, `${pack}/${f} truncated`);
