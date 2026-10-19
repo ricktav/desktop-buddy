@@ -407,3 +407,21 @@ test('guiding a top-edge buddy lowers it toward the target without covering it, 
   run(8);
   assert.equal(b.y, D1.bounds.y);
 });
+
+test('a pack with a run animation plays it only when moving fast', () => {
+  const m = JSON.parse(JSON.stringify(manifest));
+  m.animations.run = { frames: ['walk-0.svg'], fps: 10 };
+  let now = 0;
+  const world = new World({ cfg, rng: seeded(5), now: () => now });
+  world.setDisplays([D1, D2]);
+  const b = world.addBuddy('r1', 'lab-yellow', m);
+  const step = (sec) => { for (let i = 0; i < Math.round(sec * 30); i++) { now += 1000 / 30; world.tick(1 / 30); } };
+  b.x = 100;
+  b.queueAlert({ message: 'go', level: 'info', target: { kind: 'floor', x: 800, displayId: 1 }, durationMs: 1000, speed: 1.4 });
+  step(0.5);
+  assert.equal(b.view().animation, 'walk');
+  b.queueAlert({ message: 'hurry', level: 'info', target: { kind: 'floor', x: 100, displayId: 1 }, durationMs: 1000, speed: 3 });
+  let ran = false;
+  for (let i = 0; i < 300 && !ran; i++) { step(0.1); ran = b.view().animation === 'run'; }
+  assert.ok(ran, 'run animation used on a hurried trip');
+});

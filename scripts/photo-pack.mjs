@@ -14,8 +14,8 @@ import { spawnSync } from 'node:child_process';
 import sharp from 'sharp';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const KNOWN = ['idle', 'walk', 'sit', 'sleep', 'watch', 'point', 'alert', 'happy', 'drag', 'rear', 'spin', 'trick'];
-const DEFAULT_FPS = { idle: 2, walk: 8, sit: 2, sleep: 1.5, watch: 2, point: 3, alert: 6, happy: 6, drag: 4, rear: 4, spin: 8, trick: 6 };
+const KNOWN = ['idle', 'walk', 'run', 'sit', 'sleep', 'watch', 'point', 'alert', 'happy', 'drag', 'rear', 'spin', 'trick'];
+const DEFAULT_FPS = { idle: 2, walk: 8, run: 12, sit: 2, sleep: 1.5, watch: 2, point: 3, alert: 6, happy: 6, drag: 4, rear: 4, spin: 8, trick: 6 };
 
 const HELP = `photo-pack: build a Desktop Buddy pack from images
 
@@ -34,10 +34,12 @@ Options
   --tolerance <0-255>  how far from the key colour counts as background (default 60, soft edge adds 40)
   --erode <px>         shrink the cut-out by this many pixels to hide halos (default 1)
   --keep-holes         keep enclosed pockets of the background colour (for characters with green/white parts)
+  --keep-shadows       do not treat darker shades of the background colour (cast shadows) as background
   --frame-scale <f=x,..> multiply one frame's size, e.g. idle-1=1.45 when the generator drew that image smaller
+  --flip <a,b,..>      mirror these frames (by name, e.g. walk-1,sit-1) when the generator drew some of them facing the other way
   --registered         the character stays at the same spot in every image (video frames, one fixed
                        camera): keep relative positions instead of re-centring each frame
-  --facing <right|left> which way the artwork faces (default right)
+  --facing <right|left> which way the artwork faces (default: buddy.meta.json, else right)
   --size <WxH|N>       output frame size in pixels (default 256)
   --fill <0-1>         how much of the frame the largest pose may fill (default 0.88)
   --display <px>       on-screen height of one frame in CSS pixels (default 128 => scale 0.5 for 256)
@@ -59,8 +61,8 @@ Options
 // ---------- argument parsing ----------
 
 function parseArgs(argv) {
-  const o = { _: [], key: 'auto', tolerance: 60, erode: 1, facing: 'right', size: '256', fill: 0.88, display: 128, padBottom: 8, format: 'png', quality: 90 };
-  const flags = new Set(['registered', 'install', 'force', 'help', 'keepHoles']);
+  const o = { _: [], key: 'auto', tolerance: 60, erode: 1, size: '256', fill: 0.88, display: 128, padBottom: 8, format: 'png', quality: 90 };
+  const flags = new Set(['registered', 'install', 'force', 'help', 'keepHoles', 'keepShadows']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) { o._.push(a); continue; }
@@ -84,8 +86,8 @@ const sanitizeId = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^
 // ---------- loading ----------
 
 /** Decode any image to straight RGBA. */
-async function loadRgba(input) {
-  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+async function loadRgba(input, mirror = false) {
+  const { data, info } = await (mirror ? sharp(input).flop() : sharp(input)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return { w: info.width, h: info.height, d: data };
 }
 
@@ -150,7 +152,7 @@ function hasRealAlpha({ w, h, d }) {
  * highlight inside the character survives. Edge pixels get a soft alpha and the key colour is
  * unmixed from them (c = a*F + (1-a)*K).
  */
-export function keyOut(img, mode, tolerance, erode, keepHoles = false) {
+export function keyOut(img, mode, tolerance, erode, keepHoles = false, noShadowKey = false) {
   const { w, h, d } = img;
   if (mode === 'none') return { ...img, keyed: false };
   if (mode === 'auto' && hasRealAlpha(img)) return { ...img, keyed: false, note: 'already transparent' };
@@ -161,28 +163,30 @@ export function keyOut(img, mode, tolerance, erode, keepHoles = false) {
   const km = (K[0] + K[1] + K[2]) / 3;
   const kv = [K[0] - km, K[1] - km, K[2] - km];
   const kc = Math.hypot(...kv);
+  // A saturated key colour (green screen) is judged by hue, not brightness: how much of the pixel's
+  // colour (its difference from grey) points the same way as the key's. That also catches shadows
+  // cast on the screen (same hue, darker) and ignores greys and whites, even with green spill on
+  // them, and blacks, so dark eyes and noses are safe.
+  const byHue = kc > 60 && !noShadowKey;
   for (let p = 0; p < w * h; p++) {
     const i = p * 4;
-    dist[p] = Math.hypot(d[i] - K[0], d[i + 1] - K[1], d[i + 2] - K[2]) / Math.sqrt(3);
-    // A saturated key colour (green screen) also shows up darker where the subject casts a shadow
-    // on it. Same hue, different brightness: count that as background too. Greys and blacks have
-    // no chroma, so dark eyes and noses are safe.
-    if (kc > 60) {
+    if (byHue) {
       const m = (d[i] + d[i + 1] + d[i + 2]) / 3;
       const c0 = d[i] - m, c1 = d[i + 1] - m, c2 = d[i + 2] - m;
-      const cm = Math.hypot(c0, c1, c2);
-      if (cm > 0) {
-        const cos = (c0 * kv[0] + c1 * kv[1] + c2 * kv[2]) / (cm * kc);
-        if (cos > 0.96 && cm / kc > 0.4 && cm / kc < 1.6) dist[p] = Math.min(dist[p], lo * 0.5);
-      }
+      const t = (c0 * kv[0] + c1 * kv[1] + c2 * kv[2]) / (kc * kc); // 1 = as green as the screen
+      const perp = Math.hypot(c0 - t * kv[0], c1 - t * kv[1], c2 - t * kv[2]);
+      dist[p] = Math.max(0, (1 - t) * 140) + perp * 0.8;
+    } else {
+      dist[p] = Math.hypot(d[i] - K[0], d[i + 1] - K[1], d[i + 2] - K[2]) / Math.sqrt(3);
     }
   }
+  const pure = dist; // enclosed pockets use the same measure
   // Region of background: connected to the border and closer than `hi`.
   const bg = new Uint8Array(w * h);
   const stack = [];
   const push = (x, y) => { const p = y * w + x; if (!bg[p] && dist[p] < hi) { bg[p] = 1; stack.push(p); } };
   // Pockets of pure key colour (the gap between the legs) are background too, unless --keep-holes.
-  if (!keepHoles) for (let p = 0; p < w * h; p++) if (dist[p] < lo) { bg[p] = 1; stack.push(p); }
+  if (!keepHoles) for (let p = 0; p < w * h; p++) if (pure[p] < lo) { bg[p] = 1; stack.push(p); }
   for (let x = 0; x < w; x++) { push(x, 0); push(x, h - 1); }
   for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
   while (stack.length) {
@@ -289,12 +293,13 @@ export async function run(argv) {
   const canvas = parseSize(o.size);
   const facing = o.facing ?? meta.facing ?? 'right';
 
+  const flips = new Set([...(meta.flip ?? []), ...(o.flip ?? '').split(',').filter(Boolean)].map((n) => n.replace(/\.[^.]+$/, '')));
   const frameScales = { ...(meta.frameScale ?? {}), ...Object.fromEntries((o.frameScale ?? '').split(',').filter(Boolean).map((p) => p.split('=')).map(([k, v]) => [k.replace(/\.[^.]+$/, ''), Number(v)])) };
 
   // 1. decode and cut out
   const cut = [];
   for (const f of frames) {
-    const img = keyOut(await loadRgba(f.source), o.key, o.tolerance, o.erode, !!o.keepHoles);
+    const img = keyOut(await loadRgba(f.source, flips.has(f.name.replace(/\.[^.]+$/, ''))), o.key, o.tolerance, o.erode, !!o.keepHoles, !!o.keepShadows);
     const box = alphaBox(img);
     if (!box) throw new Error(`${f.name}: nothing left after removing the background. Try --key none, --tolerance, or a different --key colour.`);
     if (!img.keyed && o.key === 'auto' && !img.note) console.warn(`${f.name}: kept as is (no background removed)`);
@@ -332,15 +337,15 @@ export async function run(argv) {
     const list = cut.filter((c) => c.anim === a).sort((p, q) => p.n - q.n).map((c) => c.file);
     animations[a] = { frames: list, fps: fpsOverride[a] ?? meta.fps?.[a] ?? DEFAULT_FPS[a] };
   }
-  const { fps: _fps, frameScale: _fs, ...metaRest } = meta;
+  const { fps: _fps, frameScale: _fs, flip: _fl, ...metaRest } = meta;
   const manifest = {
-    name,
     frameWidth: canvas.w,
     frameHeight: canvas.h,
     scale: Math.round((o.display / canvas.h) * 1000) / 1000,
-    facing,
     feetOffset: o.padBottom,
     ...metaRest,
+    name,
+    facing,
     animations,
   };
   writeFileSync(join(outDir, 'buddy.json'), JSON.stringify(manifest, null, 2) + '\n');

@@ -38,6 +38,7 @@ export interface PendingAlert {
 const EDGE_MARGIN = 40;
 const RISE_SPEED = 260; // DIP/s when floating up to a guide point
 const FALL_SPEED = 700;
+const RUN_FACTOR = 2.2; // movement speed multiple from which a pack's "run" animation replaces "walk"
 const CLIMB_SPEED = 220; // a top-edge buddy climbs back up this fast after being dropped
 const HOVER_ABOVE_POINT = 28; // feet sit this far below the pointed-at target
 
@@ -577,7 +578,9 @@ export class Buddy {
 
   private currentFrame(): { animation: AnimationName; frame: number } {
     const anims = this.manifest.animations;
-    const name: AnimationName = anims[this.animation] ? this.animation : 'idle';
+    // A pack that has a "run" animation uses it instead of "walk" when moving fast.
+    const wanted: AnimationName = this.animation === 'walk' && this.moveFactor >= RUN_FACTOR && anims.run ? 'run' : this.animation;
+    const name: AnimationName = anims[wanted] ? wanted : 'idle';
     const def = anims[name]!;
     const total = def.frames.length;
     const raw = Math.floor(this.animTime * def.fps);

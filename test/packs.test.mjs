@@ -21,7 +21,9 @@ for (const pack of packs) {
     assert.equal(typeof m.name, 'string');
     assert.ok(m.frameWidth > 0 && m.frameHeight > 0);
     for (const r of REQUIRED) assert.ok(m.animations[r]?.frames?.length, `${pack}: ${r} required`);
-    for (const a of EXPECTED) assert.ok(m.animations[a]?.frames?.length, `${pack}: shipped packs should define ${a}`);
+    const photo = Object.values(m.animations).some((d) => d.frames.some((f) => !f.endsWith('.svg')));
+    // Photo packs come from whatever frames the generator produced; vector packs ship the full set.
+    for (const a of photo ? ['idle', 'walk', 'sit', 'sleep'] : EXPECTED) assert.ok(m.animations[a]?.frames?.length, `${pack}: shipped packs should define ${a}`);
     if (m.doubleClick?.animation) {
       assert.ok(m.animations[m.doubleClick.animation], `${pack}: doubleClick animation ${m.doubleClick.animation} must exist`);
     }

@@ -70,6 +70,7 @@ them feels alive. More frames in a loop = smoother, but 2 to 4 is enough.
 |---|---|---|
 | `idle-1`, `idle-2`, `idle-3`, `idle-4` **required** | 4 | Standing, relaxed. Tiny differences between frames: weight shifted, head slightly up/down, a blink in one frame, tail or hand in a slightly different place. |
 | `walk-1` ... `walk-6` **required** | 6 | A full walk cycle in side view, walking right. Frame 1 contact (front foot forward), 2 down, 3 passing (legs together), 4 contact on the other leg, 5 down, 6 passing. Same size and same body height as idle. |
+| `run-1`, `run-2` | 2 | Optional. A gallop in side view, used instead of walking when the buddy is sent somewhere in a hurry (`buddy alert --hurry`, fast speed). |
 | `sit-1`, `sit-2` | 2 | Sitting down, looking forward. Frame 2: head turned or a blink. |
 | `sleep-1`, `sleep-2` | 2 | Curled up or lying down asleep, eyes closed. Frame 2: body slightly higher (breathing). |
 | `watch-1`, `watch-2` | 2 | Standing or sitting, head turned and eyes up as if looking at a screen far above, attentive. |
@@ -155,6 +156,10 @@ Options that matter most:
 | `--tolerance 60` | Raise (80 to 100) if background remnants remain, lower (30 to 40) if the character's edge is eaten. |
 | `--registered` | Use when the character stands at the **same place in the camera frame in every image** (frames cut from one video, a fixed-camera render). Poses keep their relative position, so a hop stays a hop. Without it each frame is re-centred with its feet on the ground, which is what you want for separately generated stills. |
 | `--facing left` | Your art faces left. The buddy mirrors it as needed. |
+| `--flip walk-1,sit-1` | Some frames came out facing the other way. Mirrors just those frames so that all face `--facing`. |
+| `--keep-shadows` | Cast shadows on the background are removed by default (same hue, darker). Use this to keep them. |
+| `--keep-holes` | Keeps enclosed pockets of the background colour (for a character with green parts). By default a gap between the legs is cut out too. |
+| `--frame-scale idle-1=1.4` | One frame came out smaller or larger than the others. |
 | `--shadow` | Bakes a soft ground shadow under the feet. |
 | `--format webp --quality 88` | About 3x smaller files. |
 | `--size 384 --display 160` | A bigger buddy. |

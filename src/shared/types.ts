@@ -30,6 +30,7 @@ export interface ActiveWindowInfo {
 export type AnimationName =
   | 'idle'
   | 'walk'
+  | 'run'
   | 'sit'
   | 'sleep'
   | 'watch'
@@ -94,6 +95,8 @@ export interface BuddyManifest {
   edge?: 'bottom' | 'top';
   /** For edge "top": px (pre-scale) from the top of the frame to the point that sticks to the top of the screen. */
   gripOffset?: number;
+  /** Set false for art that must never be mirrored (a front-facing figure with text on it). Default true. */
+  flip?: boolean;
   /** Walking speed relative to the other buddies (0.1 to 3, default 1). A sloth is about 0.3. */
   speed?: number;
   /** Render frames with nearest-neighbour scaling (for PNG pixel art). */

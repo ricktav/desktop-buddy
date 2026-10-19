@@ -1,0 +1,73 @@
+{
+  "frameWidth": 320,
+  "frameHeight": 256,
+  "scale": 0.586,
+  "feetOffset": 8,
+  "name": "Bailey",
+  "facing": "left",
+  "petLines": [
+    "*wags curly tail*",
+    "Sniff sniff!",
+    "*leans in for pets*",
+    "Play time?",
+    "*happy zoomies*"
+  ],
+  "doubleClick": {
+    "animation": "happy",
+    "seconds": 2.5,
+    "say": "Woof!",
+    "effect": {
+      "type": "confetti"
+    }
+  },
+  "animations": {
+    "idle": {
+      "frames": [
+        "idle-1.webp",
+        "idle-2.webp",
+        "idle-3.webp"
+      ],
+      "fps": 2
+    },
+    "walk": {
+      "frames": [
+        "walk-1.webp",
+        "walk-2.webp",
+        "walk-3.webp"
+      ],
+      "fps": 8
+    },
+    "run": {
+      "frames": [
+        "run-1.webp",
+        "run-2.webp"
+      ],
+      "fps": 12
+    },
+    "sit": {
+      "frames": [
+        "sit-1.webp",
+        "sit-2.webp"
+      ],
+      "fps": 2
+    },
+    "sleep": {
+      "frames": [
+        "sleep-1.webp"
+      ],
+      "fps": 1.5
+    },
+    "alert": {
+      "frames": [
+        "alert-1.webp"
+      ],
+      "fps": 6
+    },
+    "happy": {
+      "frames": [
+        "happy-1.webp"
+      ],
+      "fps": 6
+    }
+  }
+}

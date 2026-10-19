@@ -192,7 +192,7 @@ function render(snapshot: WorldSnapshot): void {
     el.img.width = w;
     el.img.height = h;
     const artFacing = m.facing ?? 'right';
-    el.img.classList.toggle('flip', b.facing !== artFacing);
+    el.img.classList.toggle('flip', m.flip !== false && b.facing !== artFacing);
     el.img.classList.toggle('pixel', !!m.pixelArt);
     const lx = b.x - display.bounds.x - w / 2;
     const top = m.edge === 'top';
@@ -242,7 +242,8 @@ function render(snapshot: WorldSnapshot): void {
     if (b.pointer) {
       const px = b.pointer.x - display.bounds.x;
       const py = b.pointer.y - display.bounds.y;
-      const pawX = lx + (b.facing === 'right' ? w * 0.93 : w * 0.07);
+      // Art that is never mirrored has no "paw side": lead from the middle of the figure.
+      const pawX = lx + (m.flip === false ? w * 0.5 : b.facing === 'right' ? w * 0.93 : w * 0.07);
       const pawY = ly + h * 0.33;
       pointerParts.push(
         `<line class="lead" x1="${pawX}" y1="${pawY}" x2="${px}" y2="${py}"/>`,

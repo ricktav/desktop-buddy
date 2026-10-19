@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileS
 import { homedir } from 'node:os';
 import { join, extname } from 'node:path';
 
-export const KNOWN_ANIMATIONS = ['idle', 'walk', 'sit', 'sleep', 'watch', 'point', 'alert', 'happy', 'drag', 'rear', 'spin', 'trick'];
+export const KNOWN_ANIMATIONS = ['idle', 'walk', 'run', 'sit', 'sleep', 'watch', 'point', 'alert', 'happy', 'drag', 'rear', 'spin', 'trick'];
 export const REQUIRED_ANIMATIONS = ['idle', 'walk'];
 export const RECOMMENDED_ANIMATIONS = ['sit', 'sleep', 'watch', 'point', 'alert', 'happy', 'drag'];
 const FRAME_EXTENSIONS = new Set(['.svg', '.png', '.webp', '.gif']);
@@ -89,6 +89,7 @@ export function validatePack(manifest: unknown, get: FileGetter): Report {
   else if (m.facing === undefined) warn('"facing" is missing; the artwork is assumed to face right');
   if (m.feetOffset !== undefined && (typeof m.feetOffset !== 'number' || m.feetOffset < 0)) err('"feetOffset" must be a number of pixels >= 0');
   else if (m.feetOffset === undefined) warn('"feetOffset" is missing; 0 will be used, so the bottom of the frame is treated as the feet');
+  if (m.flip !== undefined && typeof m.flip !== 'boolean') err('"flip" must be true or false');
   if (m.edge !== undefined && m.edge !== 'bottom' && m.edge !== 'top') err('"edge" must be "bottom" or "top"');
   if (m.edge === 'top' && m.gripOffset === undefined) r.warnings.push('edge "top" without "gripOffset": the top of the frame will touch the top of the screen. Set gripOffset to the pixels between the frame top and the branch/hands.');
   if (m.gripOffset !== undefined && (typeof m.gripOffset !== 'number' || m.gripOffset < 0 || m.gripOffset > 1024)) err('"gripOffset" must be a number of pixels >= 0');
