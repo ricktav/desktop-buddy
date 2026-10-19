@@ -78,6 +78,8 @@ MANIFEST FIELDS
   scale        1
   facing       "right"
   feetOffset   6
+  edge         optional: "top" makes the buddy hang from the top of the screen (draw it hanging, set gripOffset = px from the frame top to its hands/claws); default "bottom"
+  speed        optional walking speed 0.1-3 (default 1)
   petLines     3-5 short lines the buddy says when clicked (max 30 characters each)
   animations   { "<name>": { "fps": <number>, "frames": ["<file>.svg", ...] }, ... }
   doubleClick  { "animation": "trick", "seconds": 3, "say": "short line", "effect": <effect> }

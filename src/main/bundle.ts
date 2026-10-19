@@ -89,6 +89,10 @@ export function validatePack(manifest: unknown, get: FileGetter): Report {
   else if (m.facing === undefined) warn('"facing" is missing; the artwork is assumed to face right');
   if (m.feetOffset !== undefined && (typeof m.feetOffset !== 'number' || m.feetOffset < 0)) err('"feetOffset" must be a number of pixels >= 0');
   else if (m.feetOffset === undefined) warn('"feetOffset" is missing; 0 will be used, so the bottom of the frame is treated as the feet');
+  if (m.edge !== undefined && m.edge !== 'bottom' && m.edge !== 'top') err('"edge" must be "bottom" or "top"');
+  if (m.edge === 'top' && m.gripOffset === undefined) r.warnings.push('edge "top" without "gripOffset": the top of the frame will touch the top of the screen. Set gripOffset to the pixels between the frame top and the branch/hands.');
+  if (m.gripOffset !== undefined && (typeof m.gripOffset !== 'number' || m.gripOffset < 0 || m.gripOffset > 1024)) err('"gripOffset" must be a number of pixels >= 0');
+  if (m.speed !== undefined && (typeof m.speed !== 'number' || m.speed < 0.1 || m.speed > 3)) err('"speed" must be a number between 0.1 and 3');
   if (m.petLines !== undefined && (!Array.isArray(m.petLines) || m.petLines.some((l) => typeof l !== 'string'))) err('"petLines" must be an array of strings');
 
   const fw = typeof m.frameWidth === 'number' ? m.frameWidth : 128;

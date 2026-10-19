@@ -115,7 +115,7 @@ function batSwarm(count: number, w: number, h: number): SVGSVGElement {
 }
 
 /** Confetti bursting up and raining down around the buddy. */
-function confetti(w: number, h: number): SVGSVGElement {
+function confetti(w: number, h: number, hanging = false): SVGSVGElement {
   const W = w * 3, H = h * 2.4;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'effect');
@@ -123,7 +123,8 @@ function confetti(w: number, h: number): SVGSVGElement {
   svg.setAttribute('width', String(W));
   svg.setAttribute('height', String(H));
   svg.style.left = `${(w - W) / 2}px`;
-  svg.style.top = `${h - H}px`;
+  // A buddy hanging from the top edge has no room above it: let the confetti fall from the screen edge.
+  svg.style.top = hanging ? '0px' : `${h - H}px`;
   const parts: string[] = [];
   const n = 36;
   for (let i = 0; i < n; i++) {
@@ -194,7 +195,9 @@ function render(snapshot: WorldSnapshot): void {
     el.img.classList.toggle('flip', b.facing !== artFacing);
     el.img.classList.toggle('pixel', !!m.pixelArt);
     const lx = b.x - display.bounds.x - w / 2;
-    const ly = b.y - display.bounds.y - h + feet;
+    const top = m.edge === 'top';
+    const ly = top ? b.y - display.bounds.y - (m.gripOffset ?? 0) * b.scale : b.y - display.bounds.y - h + feet;
+    el.root.classList.toggle('top', top);
     el.root.style.transform = `translate(${lx.toFixed(1)}px, ${ly.toFixed(1)}px)`;
     el.root.style.width = `${w}px`;
     el.root.style.height = `${h}px`;
@@ -224,13 +227,13 @@ function render(snapshot: WorldSnapshot): void {
     }
 
     // Trick effect drawn around the buddy.
-    const effectKey = b.effect ? `${JSON.stringify(b.effect)}:${Math.round(w)}` : null;
+    const effectKey = b.effect ? `${JSON.stringify(b.effect)}:${Math.round(w)}:${top}` : null;
     if (effectKey !== el.effectKey) {
       el.effect?.remove();
       el.effect = null;
       if (b.effect?.type === 'arc-letters') el.effect = arcLetters(b.effect.text, w, h);
       else if (b.effect?.type === 'bats') el.effect = batSwarm(b.effect.count ?? 5, w, h);
-      else if (b.effect?.type === 'confetti') el.effect = confetti(w, h);
+      else if (b.effect?.type === 'confetti') el.effect = confetti(w, h, top);
       if (el.effect) el.root.append(el.effect);
       el.effectKey = effectKey;
     }

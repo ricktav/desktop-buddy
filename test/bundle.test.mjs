@@ -187,3 +187,15 @@ test('CLI: validate and import from a file and from stdin', () => {
     rmSync(dest, { recursive: true, force: true });
   }
 });
+
+test('edge, gripOffset and speed are validated', () => {
+  const { validatePack } = require('../dist/main/bundle.js');
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='10' height='10'/></svg>`;
+  const man = (extra) => ({ name: 'T', frameWidth: 128, frameHeight: 128, facing: 'right', feetOffset: 6, animations: { idle: { frames: ['a.svg'], fps: 2 }, walk: { frames: ['a.svg'], fps: 4 } }, ...extra });
+  const check = (extra) => validatePack(man(extra), () => svg);
+  assert.deepEqual(check({ edge: 'top', gripOffset: 8, speed: 0.3 }).errors, []);
+  assert.match(check({ edge: 'top' }).warnings.join(), /gripOffset/);
+  assert.match(check({ edge: 'left' }).errors.join(), /"edge"/);
+  assert.match(check({ speed: 9 }).errors.join(), /"speed"/);
+  assert.match(check({ gripOffset: -1 }).errors.join(), /gripOffset/);
+});

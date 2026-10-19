@@ -1,0 +1,106 @@
+{
+  "name": "Slowpoke",
+  "frameWidth": 128,
+  "frameHeight": 100,
+  "scale": 1.1,
+  "facing": "right",
+  "feetOffset": 0,
+  "petLines": [
+    "Heyyy…",
+    "*slow blink*",
+    "Noooo rush…",
+    "*yaaawn*",
+    "I was here first.",
+    "Five more minutes…"
+  ],
+  "edge": "top",
+  "gripOffset": 8,
+  "speed": 0.3,
+  "doubleClick": {
+    "animation": "trick",
+    "seconds": 5,
+    "say": "Hi… five… *yawn*",
+    "effect": {
+      "type": "confetti"
+    }
+  },
+  "animations": {
+    "idle": {
+      "frames": [
+        "idle-0.svg",
+        "idle-1.svg",
+        "idle-2.svg",
+        "idle-3.svg"
+      ],
+      "fps": 1.4
+    },
+    "walk": {
+      "frames": [
+        "walk-0.svg",
+        "walk-1.svg",
+        "walk-2.svg",
+        "walk-3.svg"
+      ],
+      "fps": 3
+    },
+    "sit": {
+      "frames": [
+        "sit-0.svg",
+        "sit-1.svg"
+      ],
+      "fps": 1.2
+    },
+    "sleep": {
+      "frames": [
+        "sleep-0.svg",
+        "sleep-1.svg"
+      ],
+      "fps": 1
+    },
+    "watch": {
+      "frames": [
+        "watch-0.svg",
+        "watch-1.svg"
+      ],
+      "fps": 1.5
+    },
+    "point": {
+      "frames": [
+        "point-0.svg",
+        "point-1.svg"
+      ],
+      "fps": 2.5
+    },
+    "alert": {
+      "frames": [
+        "alert-0.svg",
+        "alert-1.svg"
+      ],
+      "fps": 5
+    },
+    "happy": {
+      "frames": [
+        "happy-0.svg",
+        "happy-1.svg",
+        "happy-2.svg"
+      ],
+      "fps": 3
+    },
+    "drag": {
+      "frames": [
+        "drag-0.svg",
+        "drag-1.svg"
+      ],
+      "fps": 2.5
+    },
+    "trick": {
+      "frames": [
+        "trick-0.svg",
+        "trick-1.svg",
+        "trick-2.svg",
+        "trick-3.svg"
+      ],
+      "fps": 2.2
+    }
+  }
+}

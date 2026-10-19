@@ -38,10 +38,16 @@ export interface PendingAlert {
 const EDGE_MARGIN = 40;
 const RISE_SPEED = 260; // DIP/s when floating up to a guide point
 const FALL_SPEED = 700;
+const CLIMB_SPEED = 220; // a top-edge buddy climbs back up this fast after being dropped
 const HOVER_ABOVE_POINT = 28; // feet sit this far below the pointed-at target
 
 export function floorOf(display: DisplayInfo): number {
   return display.workArea.y + display.workArea.height;
+}
+
+/** Where a buddy of the given edge rests on a display: the bottom of the work area, or its top. */
+export function homeOf(display: DisplayInfo, edge: 'bottom' | 'top' | undefined): number {
+  return edge === 'top' ? display.workArea.y : floorOf(display);
 }
 
 export function displayContaining(displays: DisplayInfo[], x: number, y: number): DisplayInfo | null {
@@ -127,11 +133,32 @@ export class Buddy {
     this.scale = opts.scale ?? manifest.scale ?? 1;
   }
 
-  /** Place the buddy on the floor of a display. */
+  private get top(): boolean {
+    return this.manifest.edge === 'top';
+  }
+
+  private homeY(display: DisplayInfo): number {
+    return homeOf(display, this.manifest.edge);
+  }
+
+  /** Walking speed relative to other buddies; alerts never go slower than 60%. */
+  private get baseSpeed(): number {
+    const s = Math.min(3, Math.max(0.1, this.manifest.speed ?? 1));
+    return this.currentAlert ? Math.max(s, 0.6) : s;
+  }
+
+  /** Where the anchor point should be so the buddy sits just short of a guide target. */
+  private guideY(display: DisplayInfo, targetY: number): number {
+    if (!this.top) return targetY + HOVER_ABOVE_POINT;
+    const below = (this.manifest.frameHeight - (this.manifest.gripOffset ?? 0)) * this.scale;
+    return Math.max(this.homeY(display), targetY - HOVER_ABOVE_POINT - below);
+  }
+
+  /** Place the buddy at its edge of a display. */
   placeOn(display: DisplayInfo, x?: number): void {
     this.displayId = display.id;
     this.x = clampToDisplay(display, x ?? display.workArea.x + display.workArea.width * (0.2 + 0.6 * this.rng()));
-    this.y = floorOf(display);
+    this.y = this.homeY(display);
     this.targetX = null;
     this.targetY = null;
   }
@@ -297,10 +324,10 @@ export class Buddy {
       case 'drag':
         break;
       case 'fall': {
-        const floor = floorOf(display);
-        this.y = Math.min(floor, this.y + FALL_SPEED * dt);
-        if (this.y >= floor) {
-          this.y = floor;
+        const home = this.homeY(display);
+        const v = (this.top ? CLIMB_SPEED : FALL_SPEED) * dt;
+        this.y = this.y < home ? Math.min(home, this.y + v) : Math.max(home, this.y - v);
+        if (this.y === home) {
           if (this.currentAlert) {
             this.finishAlert();
           } else {
@@ -351,8 +378,8 @@ export class Buddy {
   /** Walk toward targetX along the floor, switching displays when crossing. */
   private tickWalk(dt: number, displays: DisplayInfo[], speedScale: number): void {
     if (this.targetX === null) return;
-    const speed = this.cfg.walkSpeed * speedScale * this.curFactor;
-    this.moveFactor = speedScale * this.curFactor;
+    const speed = this.cfg.walkSpeed * speedScale * this.curFactor * this.baseSpeed;
+    this.moveFactor = speedScale * this.curFactor * this.baseSpeed;
     const dx = this.targetX - this.x;
     const step = Math.min(Math.abs(dx), speed * dt);
     if (Math.abs(dx) < 1) {
@@ -370,7 +397,7 @@ export class Buddy {
         this.displayId = next.id;
       }
       this.x = nx;
-      this.y = floorOf(next);
+      this.y = this.homeY(next);
     } else {
       // Nothing to walk onto: stop at the edge.
       const d = displayById(displays, this.displayId)!;
@@ -404,11 +431,11 @@ export class Buddy {
     }
     const d = displayById(displays, alert.target.displayId) ?? displays[0];
     this.targetX = clampToDisplay(d, alert.target.x);
-    this.targetY = alert.target.kind === 'point' ? alert.target.y + HOVER_ABOVE_POINT : null;
+    this.targetY = alert.target.kind === 'point' ? this.guideY(d, alert.target.y) : null;
     this.alertPhase = 'travel';
     this.setMood(alert.target.kind === 'point' ? 'guide' : 'alert');
-    // Make sure we are standing on the floor before travelling.
-    if (this.y !== floorOf(d) && this.displayId === d.id) this.y = floorOf(d);
+    // Make sure we are at our edge before travelling.
+    if (this.y !== this.homeY(d) && this.displayId === d.id) this.y = this.homeY(d);
   }
 
   private tickAlert(dt: number, now: number, displays: DisplayInfo[]): void {
@@ -436,8 +463,10 @@ export class Buddy {
           this.pointer = { x: alert.target.x, y: alert.target.y };
           this.faceToward(alert.target.x);
         }
-        if (this.y > ty) this.y = Math.max(ty, this.y - RISE_SPEED * Math.max(1, this.curFactor, (alert.speed ?? 1.4) / 1.4) * dt);
-        if (this.y <= ty + 0.5) {
+        const v = RISE_SPEED * Math.max(1, this.curFactor, (alert.speed ?? 1.4) / 1.4) * dt;
+        if (this.y > ty) this.y = Math.max(ty, this.y - v);
+        else if (this.y < ty) this.y = Math.min(ty, this.y + v);
+        if (Math.abs(this.y - ty) <= 0.5) {
           this.y = ty;
           this.alertPhase = 'show';
           this.showBubble(alert, now);

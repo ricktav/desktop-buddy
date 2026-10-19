@@ -12,7 +12,7 @@ for (const p of packs) {
   html += `<h3 style="margin:6px">${p} (${m.name})</h3><div style="display:flex;flex-wrap:wrap">`;
   for (const [a, d] of Object.entries(m.animations)) {
     html += `<div style="margin:4px;text-align:center"><div style="font-size:11px">${a}</div><div style="display:flex">`;
-    for (const f of d.frames) html += `<img src="file://${join(ROOT, 'buddies', p, f)}" width="${process.env.SIZE ?? 112}" height="${process.env.SIZE ?? 112}">`;
+    for (const f of d.frames) html += `<img src="file://${join(ROOT, 'buddies', p, f)}" width="${process.env.SIZE ?? 112}" height="${Math.round((process.env.SIZE ?? 112) * (m.frameHeight ?? 128) / (m.frameWidth ?? 128))}">`;
     html += `</div></div>`;
   }
   html += `</div>`;

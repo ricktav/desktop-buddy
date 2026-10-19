@@ -344,3 +344,66 @@ test('the leg animation runs faster when the buddy does', () => {
   };
   assert.ok(frameChanges(3) > frameChanges(1) * 1.8, 'more frame changes at 3x');
 });
+
+// ---- top-edge buddies (the sloth) ------------------------------------------------
+
+const slothManifest = require('../buddies/sloth/buddy.json');
+function makeSloth(opts = {}) {
+  let now = 0;
+  const world = new World({ cfg: { ...cfg, ...(opts.cfg ?? {}) }, rng: seeded(3), now: () => now });
+  world.setDisplays([D1, D2]);
+  const b = world.addBuddy('s1', 'sloth', { ...slothManifest, ...(opts.manifest ?? {}) });
+  const run = (seconds, dt = 1 / 30) => {
+    for (let i = 0; i < Math.round(seconds / dt); i++) { now += dt * 1000; world.tick(dt); }
+  };
+  return { world, b, run };
+}
+
+test('a top-edge buddy hangs from the top of the work area and stays there while wandering', () => {
+  const { b, run } = makeSloth();
+  assert.equal(b.y, D1.workArea.y);
+  for (let i = 0; i < 40; i++) {
+    run(2);
+    const d = [D1, D2].find((x) => x.id === b.displayId);
+    assert.equal(b.y, d.workArea.y, 'always on the top edge of its display');
+  }
+});
+
+test('the manifest speed slows a buddy down but alerts still travel at a sensible pace', () => {
+  const slow = makeSloth(), normal = makeWorld();
+  slow.b.x = normal.b.x = 100;
+  slow.b.queueAlert({ message: 'go', level: 'info', target: { kind: 'floor', x: 600, displayId: 1 }, durationMs: 1000 });
+  normal.b.queueAlert({ message: 'go', level: 'info', target: { kind: 'floor', x: 600, displayId: 1 }, durationMs: 1000 });
+  slow.run(1); normal.run(1);
+  const slowTravel = Math.abs(slow.b.x - 100), normalTravel = Math.abs(normal.b.x - 100);
+  assert.ok(slowTravel > 0 && slowTravel < normalTravel, `sloth ${slowTravel} < normal ${normalTravel}`);
+  assert.ok(slowTravel > normalTravel * 0.4, 'alerts do not crawl at full sloth speed');
+});
+
+test('a dropped top-edge buddy climbs back up to the top of the display it was dropped on', () => {
+  const { world, b, run } = makeSloth();
+  b.startDrag(b.x, b.y);
+  b.drag(1200, 300, world.displays);
+  run(0.1);
+  assert.equal(b.displayId, 2);
+  b.endDrag(world.displays);
+  run(0.3);
+  assert.ok(b.y < 300 && b.y > D2.workArea.y, 'climbing, not teleporting');
+  run(3);
+  assert.equal(b.y, D2.workArea.y);
+});
+
+test('guiding a top-edge buddy lowers it toward the target without covering it, then it returns', () => {
+  const { world, b, run } = makeSloth();
+  b.x = 100;
+  world.alert({ message: 'Here', target: { x: 300, y: 450 }, duration: 2 });
+  for (let i = 0; i < 100 && b.animation !== 'point'; i++) run(0.1);
+  assert.equal(b.animation, 'point');
+  run(0.5);
+  assert.equal(b.animation, 'point');
+  const below = (slothManifest.frameHeight - slothManifest.gripOffset) * b.scale;
+  assert.ok(b.y > D1.workArea.y, 'lowered from the edge');
+  assert.ok(b.y + below < 450, `sprite bottom ${b.y + below} stays above the target`);
+  run(8);
+  assert.equal(b.y, D1.workArea.y);
+});

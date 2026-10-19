@@ -126,6 +126,9 @@ it with `node bin/buddy.js import ./my-buddy`.
 | `scale` | Default size multiplier. Use 0.8 for small, 1.3 for big. |
 | `facing` | Direction the art faces, `"right"` normally. The app mirrors it when walking left. |
 | `feetOffset` | Pixels between the bottom of the frame and the feet. With feet at y = 122 in a 128 frame that is 6. |
+| `edge` | `"bottom"` (default) or `"top"`. A top buddy hangs from the top of the screen (see `buddies/sloth`); draw it hanging and set `gripOffset`. |
+| `gripOffset` | For `edge: "top"`: pixels from the top of the frame to the point that touches the screen's top edge. |
+| `speed` | Walking speed relative to other buddies, 0.1 to 3 (default 1; the sloth uses 0.3). |
 | `petLines` | Things the buddy says when clicked. |
 | `pixelArt` | `true` to scale PNG frames without smoothing. |
 | `animations` | `{ name: { frames: [...], fps, loop? } }`. |

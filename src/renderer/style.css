@@ -67,6 +67,11 @@ html, body {
   border: 7px solid transparent;
   border-top-color: #d9c9a3;
 }
+.buddy.top .bubble { bottom: auto; top: calc(100% - 6px); }
+.buddy.top .bubble::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: #d9c9a3; }
+.buddy.top .bubble.warn::after { border-top-color: transparent; border-bottom-color: #e7b73b; }
+.buddy.top .bubble.error::after { border-top-color: transparent; border-bottom-color: #e05252; }
+.buddy.top .name { top: auto; bottom: 100%; }
 .bubble.warn { background: #fff5d6; border-color: #e7b73b; }
 .bubble.warn::after { border-top-color: #e7b73b; }
 .bubble.error { background: #ffe3e3; border-color: #e05252; }

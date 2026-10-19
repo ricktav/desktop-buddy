@@ -87,6 +87,15 @@ export interface BuddyManifest {
   facing?: 'left' | 'right';
   /** Y offset (px, pre-scale) between the frame bottom and the buddy's feet. */
   feetOffset?: number;
+  /**
+   * Where the buddy lives. "bottom" (default) stands on the bottom of the screen with its feet at
+   * `feetOffset`; "top" hangs from the top of the screen by a point `gripOffset` px below the frame top.
+   */
+  edge?: 'bottom' | 'top';
+  /** For edge "top": px (pre-scale) from the top of the frame to the point that sticks to the top of the screen. */
+  gripOffset?: number;
+  /** Walking speed relative to the other buddies (0.1 to 3, default 1). A sloth is about 0.3. */
+  speed?: number;
   /** Render frames with nearest-neighbour scaling (for PNG pixel art). */
   pixelArt?: boolean;
   animations: Partial<Record<AnimationName, AnimationDef>> & { idle: AnimationDef; walk: AnimationDef };
@@ -112,7 +121,7 @@ export interface BuddyView {
   name: string;
   /** Folder key used to resolve sprite URLs. */
   pack: string;
-  /** Global DIP coordinates of the buddy's feet (bottom centre). */
+  /** Global DIP coordinates of the buddy's feet (bottom centre), or of its grip point when the pack's edge is "top". */
   x: number;
   y: number;
   facing: 'left' | 'right';
