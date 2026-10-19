@@ -5,7 +5,7 @@ walks over to whatever window you are working in and watches it, sits down
 when you go idle, falls asleep if you stay away, and delivers alerts and
 on-screen guidance from your scripts, tools and timed reminders.
 
-Built with Electron + TypeScript for macOS and Windows ([Windows guide](docs/WINDOWS.md)). Twenty buddies ship in the box,
+Built with Electron + TypeScript for macOS and Windows ([Windows guide](docs/WINDOWS.md)). Twenty-one buddies ship in the box,
 and you can have any AI design more for you (see
 [Make your own buddy with an AI](docs/CREATE-A-BUDDY.md)).
 
@@ -29,6 +29,7 @@ and you can have any AI design more for you (see
 | `toddler-trike` | Tilly | Cartoon toddler girl with pigtails and bows pedalling a pink tricycle (her legs follow the pedals); rings her bell on alerts and pops a wheelie on double-click |
 | `rex` | Rex | Photo-realistic Labrador puppy (made with the [photo pipeline](docs/PHOTO-BUDDY.md) from AI-generated frames) |
 | `bailey` | Bailey | Photo-realistic curly grey-and-white dog with a collar; trots, and breaks into a run when sent somewhere in a hurry |
+| `rick-mtv` | Rick MTV | Pixel-art boxer in an MTV Fight and Fit shirt, animated from a single picture (head, gloves and legs move separately); shuffles sideways without ever mirroring, shadow-boxes on double-click |
 | `sloth` | Slowpoke | Three-toed sloth that hangs from the **top** edge of the screen and crawls hand over hand, very slowly; dropped, it climbs back up; double-click for a slow wave and a yawn |
 | `capybara` | Capy | Calm capybara with a blunt snout; double-click and it relaxes with a yuzu on its head and rising steam |
 

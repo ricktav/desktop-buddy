@@ -293,7 +293,7 @@ export async function run(argv) {
   const canvas = parseSize(o.size);
   const facing = o.facing ?? meta.facing ?? 'right';
 
-  const flips = new Set([...(meta.flip ?? []), ...(o.flip ?? '').split(',').filter(Boolean)].map((n) => n.replace(/\.[^.]+$/, '')));
+  const flips = new Set([...(meta.flipFrames ?? []), ...(o.flip ?? '').split(',').filter(Boolean)].map((n) => n.replace(/\.[^.]+$/, '')));
   const frameScales = { ...(meta.frameScale ?? {}), ...Object.fromEntries((o.frameScale ?? '').split(',').filter(Boolean).map((p) => p.split('=')).map(([k, v]) => [k.replace(/\.[^.]+$/, ''), Number(v)])) };
 
   // 1. decode and cut out
@@ -337,7 +337,7 @@ export async function run(argv) {
     const list = cut.filter((c) => c.anim === a).sort((p, q) => p.n - q.n).map((c) => c.file);
     animations[a] = { frames: list, fps: fpsOverride[a] ?? meta.fps?.[a] ?? DEFAULT_FPS[a] };
   }
-  const { fps: _fps, frameScale: _fs, flip: _fl, ...metaRest } = meta;
+  const { fps: _fps, frameScale: _fs, flipFrames: _fl, ...metaRest } = meta;
   const manifest = {
     frameWidth: canvas.w,
     frameHeight: canvas.h,
