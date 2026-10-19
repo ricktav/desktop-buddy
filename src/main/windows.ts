@@ -75,6 +75,9 @@ export class OverlayWindows {
       show: false,
       backgroundColor: '#00000000',
       roundedCorners: false,
+      // macOS otherwise pushes a window down below the menu bar, which also shifts everything drawn
+      // in it; this lets the overlay cover the whole display and the sloth hang from the true top edge.
+      ...(process.platform === 'darwin' ? { enableLargerThanScreen: true } : {}),
       webPreferences: {
         preload: join(__dirname, '..', 'preload', 'preload.js'),
         contextIsolation: true,
