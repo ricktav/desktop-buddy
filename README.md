@@ -5,7 +5,7 @@ walks over to whatever window you are working in and watches it, sits down
 when you go idle, falls asleep if you stay away, and delivers alerts and
 on-screen guidance from your scripts, tools and timed reminders.
 
-Built with Electron + TypeScript for macOS and Windows ([Windows guide](docs/WINDOWS.md)). Nineteen buddies ship in the box,
+Built with Electron + TypeScript for macOS and Windows ([Windows guide](docs/WINDOWS.md)). Eighteen buddies ship in the box,
 and you can have any AI design more for you (see
 [Make your own buddy with an AI](docs/CREATE-A-BUDDY.md)).
 
