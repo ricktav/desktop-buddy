@@ -4,8 +4,7 @@
 // animation frames, then packed with scripts/photo-pack.mjs.
 //
 // The figure faces the camera and has writing on its shirt, so the pack sets `flip: false`: it is
-// never mirrored. Walking and running are a separate side-view drawing (`animFlip`), which is
-// mirrored to follow the direction of travel.
+// never mirrored and shuffles sideways like a boxer.
 //
 // Run: node scripts/gen-rick-sprites.mjs        (needs `npm install` for sharp)
 import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -14,7 +13,6 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
 import { run } from './photo-pack.mjs';
-import { renderRickSide, GRID } from './lib/rick-side.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'scripts', 'source', 'rick-mtv.webp');
@@ -129,6 +127,17 @@ function buildPoses() {
     armR: { rot: [0, 1.5, 2, 1][k] },
     eyes: k === 2 ? 'closed' : 'open',
   }));
+  // walk: a boxer's shuffle. The foot that is lifted swings up (left foot clockwise, right foot counter-clockwise).
+  P.walk = [0, 1, 2, 3, 4, 5].map((k) => {
+    const s = Math.sin((k * Math.PI) / 3);
+    return {
+      base: { dx: 10 * s, dy: -12 * Math.abs(s), rot: 2.5 * s },
+      head: { rot: -2 * s },
+      armL: { rot: 2 * s }, armR: { rot: 2 * s },
+      legL: { rot: 8 * Math.max(0, s) },
+      legR: { rot: -8 * Math.max(0, -s) },
+    };
+  });
   const c1 = crouch(0.78);
   P.sit = [0, 1].map((k) => ({ legSy: c1.legSy, base: { dy: c1.dy + [0, 6][k] }, head: { dy: 8, rot: [3, 5][k] }, armL: { dy: 20, rot: -4 }, armR: { dy: 20, rot: 4 } }));
   const c2 = crouch(0.66);
@@ -186,25 +195,10 @@ for (const [anim, list] of Object.entries(poses)) {
     count++;
   }
 }
-// Walking and running are drawn in side view (scripts/lib/rick-side.mjs). The picture is placed on
-// the same canvas as the front-view frames so that size and ground line match.
-const SIDE_SCALE = N / GRID;
-async function sideFrame(opts) {
-  const art = await renderRickSide(opts, SIDE_SCALE);
-  return sharp({ create: { width: N, height: N + PAD, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .composite([{ input: art, left: 0, top: PAD }]).png().toBuffer();
-}
-const WALK_N = 8;
-for (let k = 0; k < WALK_N; k++) {
-  writeFileSync(join(raw, `walk-${k + 1}.png`), await sideFrame({ phase: k / WALK_N }));
-  writeFileSync(join(raw, `run-${k + 1}.png`), await sideFrame({ phase: k / WALK_N, swing: 38, flexMax: 85, lean: 15, rock: 2, armSwing: 14 }));
-  count += 2;
-}
 writeFileSync(join(raw, 'buddy.meta.json'), JSON.stringify({
   name: 'Rick MTV',
   facing: 'right',
   flip: false,
-  animFlip: { walk: true, run: true },
   petLines: ['Fight and fit!', '*bounces on his toes*', 'Jab, jab, cross!', 'Hit the gym!', 'MTV all day.', '*cracks knuckles*'],
   doubleClick: { animation: 'trick', seconds: 3.2, say: 'Fight and fit!', effect: { type: 'confetti' } },
 }, null, 2));
@@ -213,7 +207,7 @@ console.log(`rendered ${count} frames to ${raw}`);
 const out = join(ROOT, 'buddies', 'rick-mtv');
 const res = await run([raw, '--name', 'Rick MTV', '--id', 'rick-mtv', '--out', out, '--force', '--key', 'none', '--registered',
   '--size', '208x384', '--display', '190', '--shadow', '--erode', '0', '--format', 'webp', '--quality', '90',
-  '--preview', join(raw, 'preview.png'), '--fps', 'idle=2,walk=10,run=14,trick=5,point=4']);
+  '--preview', join(raw, 'preview.png'), '--fps', 'idle=2,walk=9,trick=5,point=4']);
 if (res?.errors) process.exit(1);
 console.log('preview:', join(raw, 'preview.png'));
 void readFileSync;
