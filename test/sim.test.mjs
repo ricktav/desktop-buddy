@@ -361,11 +361,11 @@ function makeSloth(opts = {}) {
 
 test('a top-edge buddy hangs from the top of the work area and stays there while wandering', () => {
   const { b, run } = makeSloth();
-  assert.equal(b.y, D1.workArea.y);
+  assert.equal(b.y, D1.bounds.y);
   for (let i = 0; i < 40; i++) {
     run(2);
     const d = [D1, D2].find((x) => x.id === b.displayId);
-    assert.equal(b.y, d.workArea.y, 'always on the top edge of its display');
+    assert.equal(b.y, d.bounds.y, 'always on the top edge of its display');
   }
 });
 
@@ -388,9 +388,9 @@ test('a dropped top-edge buddy climbs back up to the top of the display it was d
   assert.equal(b.displayId, 2);
   b.endDrag(world.displays);
   run(0.3);
-  assert.ok(b.y < 300 && b.y > D2.workArea.y, 'climbing, not teleporting');
+  assert.ok(b.y < 300 && b.y > D2.bounds.y, 'climbing, not teleporting');
   run(3);
-  assert.equal(b.y, D2.workArea.y);
+  assert.equal(b.y, D2.bounds.y);
 });
 
 test('guiding a top-edge buddy lowers it toward the target without covering it, then it returns', () => {
@@ -402,8 +402,8 @@ test('guiding a top-edge buddy lowers it toward the target without covering it, 
   run(0.5);
   assert.equal(b.animation, 'point');
   const below = (slothManifest.frameHeight - slothManifest.gripOffset) * b.scale;
-  assert.ok(b.y > D1.workArea.y, 'lowered from the edge');
+  assert.ok(b.y > D1.bounds.y, 'lowered from the edge');
   assert.ok(b.y + below < 450, `sprite bottom ${b.y + below} stays above the target`);
   run(8);
-  assert.equal(b.y, D1.workArea.y);
+  assert.equal(b.y, D1.bounds.y);
 });

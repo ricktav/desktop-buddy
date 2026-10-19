@@ -45,9 +45,9 @@ export function floorOf(display: DisplayInfo): number {
   return display.workArea.y + display.workArea.height;
 }
 
-/** Where a buddy of the given edge rests on a display: the bottom of the work area, or its top. */
+/** Where a buddy of the given edge rests on a display: the bottom of the work area, or the very top of the screen (over the menu bar). */
 export function homeOf(display: DisplayInfo, edge: 'bottom' | 'top' | undefined): number {
-  return edge === 'top' ? display.workArea.y : floorOf(display);
+  return edge === 'top' ? display.bounds.y : floorOf(display);
 }
 
 export function displayContaining(displays: DisplayInfo[], x: number, y: number): DisplayInfo | null {
