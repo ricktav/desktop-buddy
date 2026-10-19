@@ -121,6 +121,7 @@ export function validatePack(manifest: unknown, get: FileGetter): Report {
       if (def.fps === undefined) warn(`animation "${name}" has no "fps"; 4 will be used`);
       else err(`animation "${name}": "fps" must be a number between 0 and 60`);
     }
+    if (def.flip !== undefined && typeof def.flip !== 'boolean') err(`animation "${name}": "flip" must be true or false`);
     if (def.loop !== undefined && typeof def.loop !== 'boolean') err(`animation "${name}": "loop" must be true or false`);
     if (!Array.isArray(def.frames) || def.frames.length === 0) {
       err(`animation "${name}": "frames" must be a non-empty list of file names`);

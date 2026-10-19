@@ -192,6 +192,26 @@ camera with a transparent background (PNG with alpha), 256 to 512 px square, and
 **Already have transparent PNGs** (for example from a background-removal tool): use
 `--key none`, or leave `auto`, which detects the transparency.
 
+### Walk cycles that jiggle
+
+Image generators draw every frame separately, so the animal comes out at a slightly different size
+and spot each time, and the legs barely change. Played as an animation that looks like jiggling, not
+walking. Three options fix most of it:
+
+```bash
+node scripts/photo-pack.mjs raw/rex --name Rex --stabilize idle,walk,watch --ref idle-2 --bob walk=4
+```
+
+- `--stabilize idle,walk,...` lays each frame's silhouette over a reference frame, so the animal has the same size and place in every frame and only the legs and head move. Use it for poses of the same kind (standing and walking), not for lying or jumping poses.
+- `--bob walk=4` adds a small body bounce between footfalls (px at the final frame size).
+- `--pingpong walk` plays a short walk forwards and backwards (1 2 3 2) instead of jumping from the last frame to the first. Use it when you have only 2 to 4 walk frames that are not a real loop.
+
+The tool can only use the poses it is given. For a convincing walk ask the generator for **8 frames of
+one full stride in side view, with clearly different leg positions**: contact (front foot down, legs
+far apart), down, passing (legs together, one leg lifted), up, and the same again for the other leg.
+Say "exaggerated leg positions", "treadmill walk in place" and "same camera, same size in every frame".
+Video-to-frames (see above) usually gives the best cycles.
+
 ### If it looks wrong
 
 | Symptom | Fix |

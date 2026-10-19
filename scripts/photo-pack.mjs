@@ -37,6 +37,12 @@ Options
   --keep-shadows       do not treat darker shades of the background colour (cast shadows) as background
   --frame-scale <f=x,..> multiply one frame's size, e.g. idle-1=1.45 when the generator drew that image smaller
   --flip <a,b,..>      mirror these frames (by name, e.g. walk-1,sit-1) when the generator drew some of them facing the other way
+  --stabilize <a,b,..> lock these animations (e.g. idle,walk,run) to one size and place by overlaying each frame's
+                       silhouette on a reference frame; removes size jumps and wobble between separately generated frames
+  --free-scale         with --stabilize: search any scale instead of trusting the pictures' width ratio
+  --ref <frame>        reference frame for --stabilize (default idle-2, else the first idle frame)
+  --bob <a=px,..>      lift the body by up to px pixels between footfalls, e.g. walk=4,run=6 (adds a step bounce)
+  --pingpong <a,b,..>  play these animations forwards then backwards (1 2 3 2 ...) instead of looping 1 2 3
   --registered         the character stays at the same spot in every image (video frames, one fixed
                        camera): keep relative positions instead of re-centring each frame
   --facing <right|left> which way the artwork faces (default: buddy.meta.json, else right)
@@ -62,7 +68,7 @@ Options
 
 function parseArgs(argv) {
   const o = { _: [], key: 'auto', tolerance: 60, erode: 1, size: '256', fill: 0.88, display: 128, padBottom: 8, format: 'png', quality: 90 };
-  const flags = new Set(['registered', 'install', 'force', 'help', 'keepHoles', 'keepShadows']);
+  const flags = new Set(['registered', 'install', 'force', 'help', 'keepHoles', 'keepShadows', 'freeScale']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) { o._.push(a); continue; }
@@ -243,9 +249,9 @@ function parseSize(s) {
 }
 
 /** Draws the cropped `box` of `img` at `scale`, centred horizontally with its bottom edge on the baseline. */
-async function composeFrame(img, box, scale, canvas, shadow, padBottom) {
+async function composeFrame(img, box, scale, canvas, shadow, padBottom, lift = 0) {
   const cw = Math.max(1, Math.round(box.w * scale)), ch = Math.max(1, Math.round(box.h * scale));
-  const dx = Math.round((canvas.w - cw) / 2), dy = canvas.h - padBottom - ch;
+  const dx = Math.round((canvas.w - cw) / 2), dy = Math.round(canvas.h - padBottom - ch - lift);
   const sprite = await sharp(img.d, { raw: { width: img.w, height: img.h, channels: 4 } })
     .extract({ left: box.x, top: box.y, width: box.w, height: box.h })
     .resize(cw, ch, { kernel: 'lanczos3' })
@@ -259,6 +265,85 @@ async function composeFrame(img, box, scale, canvas, shadow, padBottom) {
   }
   layers.push({ input: sprite, left: dx, top: dy });
   return sharp({ create: { width: canvas.w, height: canvas.h, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite(layers);
+}
+
+
+// ---------- stabilising (registration) ----------
+
+/** Alpha of an RGBA image resampled to wc x hc cells, as a 0/1 mask. */
+async function maskCells(img, wc, hc) {
+  const { data } = await sharp(img.d, { raw: { width: img.w, height: img.h, channels: 4 } })
+    .extractChannel(3).resize(wc, hc, { kernel: 'linear' }).raw().toBuffer({ resolveWithObject: true });
+  const m = new Uint8Array(wc * hc);
+  const pts = [];
+  let sx = 0, bottom = 0;
+  for (let i = 0; i < m.length; i++) if (data[i] > 127) { m[i] = 1; const x = i % wc, y = (i / wc) | 0; pts.push(x, y); sx += x; if (y > bottom) bottom = y; }
+  return { m, wc, hc, pts, n: pts.length / 2, cx: pts.length ? sx / (pts.length / 2) : 0, bottom };
+}
+
+/** Best scale and shift that lays `img`'s silhouette over the reference mask (IoU search). */
+async function register(img, ref, g, prior, free) {
+  let best = { iou: -1, s: 1, tx: 0, ty: 0 };
+  const tryScale = async (s) => {
+    const wc = Math.max(4, Math.round((img.w * s) / g)), hc = Math.max(4, Math.round((img.h * s) / g));
+    const mk = await maskCells(img, wc, hc);
+    if (!mk.n) return;
+    const tx0 = Math.round(ref.cx - mk.cx), ty0 = ref.bottom - mk.bottom;
+    for (let dy = -6; dy <= 6; dy++) for (let dx = -8; dx <= 8; dx++) {
+      const tx = tx0 + dx, ty = ty0 + dy;
+      let hit = 0;
+      for (let i = 0; i < mk.pts.length; i += 2) {
+        const x = mk.pts[i] + tx, y = mk.pts[i + 1] + ty;
+        if (x >= 0 && y >= 0 && x < ref.wc && y < ref.hc) hit += ref.m[y * ref.wc + x];
+      }
+      const iou = hit / (mk.n + ref.n - hit);
+      if (iou > best.iou) best = { iou, s, tx, ty };
+    }
+  };
+  if (free) for (let s = 0.55; s <= 1.9; s *= 1.03) await tryScale(s);
+  // Generators draw the animal at the same fraction of the picture width, so pictures of different
+  // sizes differ in scale by exactly that ratio; only a small correction is searched around it.
+  else for (let k = -4; k <= 4; k++) await tryScale(prior * (1 + k * 0.01));
+  const s0 = best.s;
+  for (let k = -4; k <= 4; k++) if (k) await tryScale(s0 * (1 + k * 0.004));
+  return best;
+}
+
+/**
+ * Puts the listed animations' frames in one shared coordinate system, so the animal keeps the same
+ * size and place from frame to frame and only its legs and head move. Each frame is scaled and shifted
+ * to overlay the reference frame's silhouette as well as possible. Mutates the entries of `cut`.
+ */
+async function stabilise(cut, anims, refName, free) {
+  const group = cut.filter((c) => anims.includes(c.anim));
+  if (group.length < 2) return;
+  const ref = group.find((c) => `${c.anim}-${c.n}` === refName) ?? group.find((c) => c.anim === 'idle') ?? group[0];
+  const g = ref.box.h / 110;
+  const refMask = await maskCells(ref.img, Math.round(ref.img.w / g), Math.round(ref.img.h / g));
+  for (const c of group) {
+    const r = c === ref ? { s: 1, tx: 0, ty: 0, iou: 1 } : await register(c.img, refMask, g, ref.img.w / c.img.w, free);
+    c.reg = { s: r.s, x: r.tx * g, y: r.ty * g, iou: r.iou };
+    if (r.iou < 0.5) console.warn(`${c.anim}-${c.n}: silhouette matches the reference poorly (IoU ${r.iou.toFixed(2)}); check the preview`);
+  }
+  // Union of all transformed boxes, then redraw each frame onto a canvas of that size.
+  const boxes = group.map((c) => ({ x: c.reg.s * c.box.x + c.reg.x, y: c.reg.s * c.box.y + c.reg.y, w: c.reg.s * c.box.w, h: c.reg.s * c.box.h }));
+  const x0 = Math.floor(Math.min(...boxes.map((b) => b.x))), y0 = Math.floor(Math.min(...boxes.map((b) => b.y)));
+  const x1 = Math.ceil(Math.max(...boxes.map((b) => b.x + b.w))), y1 = Math.ceil(Math.max(...boxes.map((b) => b.y + b.h)));
+  const W = x1 - x0, H = y1 - y0;
+  for (let i = 0; i < group.length; i++) {
+    const c = group[i], b = boxes[i];
+    const sprite = await sharp(c.img.d, { raw: { width: c.img.w, height: c.img.h, channels: 4 } })
+      .extract({ left: c.box.x, top: c.box.y, width: c.box.w, height: c.box.h })
+      .resize(Math.max(1, Math.round(b.w)), Math.max(1, Math.round(b.h)), { kernel: 'lanczos3' }).png().toBuffer();
+    const left = Math.max(0, Math.round(b.x - x0)), top = Math.max(0, Math.round(b.y - y0));
+    const { data } = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: sprite, left, top }]).raw().toBuffer({ resolveWithObject: true });
+    c.img = { w: W, h: H, d: data };
+    c.box = { x: 0, y: 0, w: W, h: H };
+    c.stab = true;
+    c.fs = 1;
+  }
+  console.log(`stabilised ${group.length} frames against ${ref.anim}-${ref.n}: ${group.map((c) => `${c.anim}-${c.n} x${c.reg.s.toFixed(2)}`).join(', ')}`);
 }
 
 // ---------- main ----------
@@ -306,6 +391,9 @@ export async function run(argv) {
     cut.push({ ...f, img, box, fs: frameScales[f.name.replace(/\.[^.]+$/, '')] ?? 1 });
   }
 
+  // 1b. optionally lock the size and position of the walking/standing animations to one reference
+  if (o.stabilize) await stabilise(cut, o.stabilize.split(',').filter(Boolean), o.ref, !!o.freeScale);
+
   // 2. one scale for everything
   let union = null;
   if (o.registered) {
@@ -315,15 +403,20 @@ export async function run(argv) {
     const dims = new Set(cut.map((c) => `${c.img.w}x${c.img.h}`));
     if (dims.size > 1) console.warn(`--registered expects all images to be the same size, got ${[...dims].join(', ')}`);
   }
-  const maxW = Math.max(...cut.map((c) => (union ? union.w : c.box.w * c.fs)));
-  const maxH = Math.max(...cut.map((c) => (union ? union.h : c.box.h * c.fs)));
+  const maxW = Math.max(...cut.map((c) => (union && !c.stab ? union.w : c.box.w * c.fs)));
+  const maxH = Math.max(...cut.map((c) => (union && !c.stab ? union.h : c.box.h * c.fs)));
   const availW = canvas.w * o.fill, availH = (canvas.h - o.padBottom) * o.fill;
   const scale = Math.min(availW / maxW, availH / maxH);
 
+  const bobs = Object.fromEntries((o.bob ?? '').split(',').filter(Boolean).map((p) => p.split('=')).map(([k, v]) => [k, Number(v)]));
+
   // 3. place every frame: feet on the baseline, centred (or registered)
   for (const c of cut) {
-    const crop = clampBox(union ?? c.box, c.img);
-    const comp = await composeFrame(c.img, crop, scale * c.fs, canvas, o.shadow, o.padBottom);
+    const crop = clampBox(union && !c.stab ? union : c.box, c.img);
+    // Optional step bounce: the body rises between footfalls (two bounces per cycle).
+    const same = cut.filter((x) => x.anim === c.anim);
+    const lift = (bobs[c.anim] ?? 0) * Math.abs(Math.sin((2 * Math.PI * same.indexOf(c)) / same.length));
+    const comp = await composeFrame(c.img, crop, scale * c.fs, canvas, o.shadow, o.padBottom, lift);
     const file = `${c.anim}-${c.n}.${o.format}`;
     const target = o.format === 'webp' ? comp.webp({ quality: o.quality, alphaQuality: 100 }) : comp.png({ compressionLevel: 9 });
     await target.toFile(join(outDir, file));
@@ -331,13 +424,16 @@ export async function run(argv) {
   }
 
   // 4. manifest
+  const pingpong = new Set((o.pingpong ?? '').split(',').filter(Boolean));
   const fpsOverride = Object.fromEntries((o.fps ?? '').split(',').filter(Boolean).map((p) => p.split('=')).map(([k, v]) => [k, Number(v)]));
   const animations = {};
   for (const a of anims) {
-    const list = cut.filter((c) => c.anim === a).sort((p, q) => p.n - q.n).map((c) => c.file);
-    animations[a] = { frames: list, fps: fpsOverride[a] ?? meta.fps?.[a] ?? DEFAULT_FPS[a] };
+    let list = cut.filter((c) => c.anim === a).sort((p, q) => p.n - q.n).map((c) => c.file);
+    // A short walk is not a loop: play it forwards and backwards (1 2 3 2) so it does not jump from the last frame to the first.
+    if (pingpong.has(a) && list.length > 2) list = [...list, ...list.slice(1, -1).reverse()];
+    animations[a] = { frames: list, fps: fpsOverride[a] ?? meta.fps?.[a] ?? DEFAULT_FPS[a], ...(meta.animFlip && a in meta.animFlip ? { flip: !!meta.animFlip[a] } : {}) };
   }
-  const { fps: _fps, frameScale: _fs, flipFrames: _fl, ...metaRest } = meta;
+  const { fps: _fps, frameScale: _fs, flipFrames: _fl, animFlip: _af, ...metaRest } = meta;
   const manifest = {
     frameWidth: canvas.w,
     frameHeight: canvas.h,

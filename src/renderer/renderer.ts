@@ -192,7 +192,7 @@ function render(snapshot: WorldSnapshot): void {
     el.img.width = w;
     el.img.height = h;
     const artFacing = m.facing ?? 'right';
-    el.img.classList.toggle('flip', m.flip !== false && b.facing !== artFacing);
+    el.img.classList.toggle('flip', (def.flip ?? m.flip) !== false && b.facing !== artFacing);
     el.img.classList.toggle('pixel', !!m.pixelArt);
     const lx = b.x - display.bounds.x - w / 2;
     const top = m.edge === 'top';

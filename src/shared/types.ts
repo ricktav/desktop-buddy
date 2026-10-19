@@ -45,6 +45,8 @@ export type AnimationName =
 export interface AnimationDef {
   frames: string[];
   fps: number;
+  /** Overrides the pack's `flip` for this animation (e.g. a side-view walk in a pack that otherwise never mirrors). */
+  flip?: boolean;
   /** When false the animation stops on its last frame. Default true. */
   loop?: boolean;
 }

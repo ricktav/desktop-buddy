@@ -132,7 +132,7 @@ it with `node bin/buddy.js import ./my-buddy`.
 | `speed` | Walking speed relative to other buddies, 0.1 to 3 (default 1; the sloth uses 0.3). |
 | `petLines` | Things the buddy says when clicked. |
 | `pixelArt` | `true` to scale PNG frames without smoothing. |
-| `animations` | `{ name: { frames: [...], fps, loop? } }`. |
+| `animations` | `{ name: { frames: [...], fps, loop?, flip? } }`. `flip` overrides the pack's `flip` for that animation (a side-view walk in a pack that otherwise never mirrors). |
 | `doubleClick` | `{ animation, seconds, say, effect }`, the trick played on double-click. |
 
 Animations used by the app: `idle` and `walk` (required), `sit`, `sleep`,
