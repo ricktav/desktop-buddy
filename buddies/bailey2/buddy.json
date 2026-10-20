@@ -1,0 +1,98 @@
+{
+  "frameWidth": 320,
+  "frameHeight": 256,
+  "scale": 0.586,
+  "feetOffset": 8,
+  "name": "Bailey 2",
+  "facing": "left",
+  "petLines": [
+    "*wags curly tail*",
+    "Sniff sniff!",
+    "*leans in for pets*",
+    "Play time?",
+    "*happy zoomies*"
+  ],
+  "doubleClick": {
+    "animation": "trick",
+    "seconds": 2.75,
+    "say": "Woof!",
+    "effect": {
+      "type": "confetti"
+    }
+  },
+  "animations": {
+    "idle": {
+      "frames": [
+        "idle-1.webp",
+        "idle-2.webp",
+        "idle-3.webp"
+      ],
+      "fps": 2
+    },
+    "walk": {
+      "frames": [
+        "walk-1.webp",
+        "walk-2.webp",
+        "walk-3.webp",
+        "walk-4.webp",
+        "walk-5.webp",
+        "walk-6.webp",
+        "walk-7.webp",
+        "walk-8.webp"
+      ],
+      "fps": 10
+    },
+    "run": {
+      "frames": [
+        "run-1.webp",
+        "run-2.webp",
+        "run-3.webp",
+        "run-4.webp",
+        "run-5.webp",
+        "run-6.webp"
+      ],
+      "fps": 14
+    },
+    "sit": {
+      "frames": [
+        "sit-1.webp",
+        "sit-2.webp"
+      ],
+      "fps": 2
+    },
+    "sleep": {
+      "frames": [
+        "sleep-1.webp"
+      ],
+      "fps": 1.5
+    },
+    "alert": {
+      "frames": [
+        "alert-1.webp"
+      ],
+      "fps": 6
+    },
+    "happy": {
+      "frames": [
+        "happy-1.webp"
+      ],
+      "fps": 6
+    },
+    "trick": {
+      "frames": [
+        "jump-1.webp",
+        "jump-2.webp",
+        "jump-3.webp",
+        "jump-4.webp",
+        "jump-5.webp",
+        "jump-6.webp",
+        "jump-7.webp",
+        "jump-8.webp",
+        "jump-9.webp",
+        "jump-10.webp",
+        "jump-11.webp"
+      ],
+      "fps": 12
+    }
+  }
+}
