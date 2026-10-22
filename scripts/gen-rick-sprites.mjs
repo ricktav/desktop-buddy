@@ -1,213 +1,233 @@
 // "Rick MTV": a boxer in a pixel-art caricature style, built from ONE source picture
-// (scripts/source/rick-mtv.webp, transparent background). The picture is cut into parts (head,
-// two gloved arms, upper body, two legs) which are moved, rotated and squashed to make the
-// animation frames, then packed with scripts/photo-pack.mjs.
+// (scripts/source/rick-mtv.webp, transparent background).
+//
+// The picture stays exactly as drawn: head, face, shirt and shorts never move, tilt or squash.
+// Only the legs (cut out below the shorts and hinged at the hip) and the gloves move. The legs get
+// a hidden thigh under the shorts, so a leg raised high still joins the hip. Double-click does a
+// high kick.
 //
 // The figure faces the camera and has writing on its shirt, so the pack sets `flip: false`: it is
 // never mirrored and shuffles sideways like a boxer.
 //
 // Run: node scripts/gen-rick-sprites.mjs        (needs `npm install` for sharp)
-import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
 import sharp from 'sharp';
-import { run } from './photo-pack.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'scripts', 'source', 'rick-mtv.webp');
+const OUT = join(ROOT, 'buddies', 'rick-mtv');
 const N = 1408; // source canvas
+const GROUND_Y = 1353; // soles of the feet in the source
+
+// Output frame: a fixed window on the source, wide enough on the right for the kick.
+const VIEW = { x: 80, y: -97, w: 1400, h: 1477 };
+const FW = 364, FH = 384;
+const FEET = Math.round(FH - ((GROUND_Y - VIEW.y) * FH) / VIEW.h); // px from frame bottom to the soles
 
 // ---- cut lines (source pixel coordinates) --------------------------------------------
-const POLYS = {
-  head: [[540, 25], [820, 25], [820, 255], [790, 282], [785, 340], [745, 375], [640, 378], [600, 345], [598, 292], [548, 282]],
-  armL: [[372, 268], [618, 268], [622, 392], [566, 424], [548, 476], [536, 600], [372, 600]],
-  armR: [[760, 250], [960, 250], [985, 470], [985, 600], [820, 600], [812, 470], [790, 400], [760, 330]],
-  legL: [[300, 785], [650, 785], [650, 1400], [300, 1400]],
-  legR: [[650, 785], [1100, 785], [1100, 1400], [650, 1400]],
-  upper: [[0, 0], [N, 0], [N, 835], [0, 835]],
+// The shorts: everything inside stays with the body. Below them are the legs.
+const SHORTS = [[520, 640], [805, 640], [818, 700], [884, 832], [884, 852], [806, 876], [738, 924], [688, 924], [650, 852], [604, 918], [548, 910], [424, 834], [424, 806], [515, 660]];
+const LEG_TOP = 780;
+const LEGS = {
+  legL: { x0: 240, x1: 650, pivot: [512, 846] },
+  legR: { x0: 650, x1: 1160, pivot: [788, 852] },
 };
-// Pivots: where each part hinges.
-const PIV = { base: [650, 835], head: [700, 372], armL: [540, 430], armR: [800, 440], legL: [520, 835], legR: [780, 840], ground: [700, 1353] };
+// the right leg (the kicking one) also bends at the knee: the shin hinges here
+const KNEE = { y: 990, radius: 52, pivot: [857, 990] };
+const ARMS = {
+  armL: { poly: [[372, 268], [618, 268], [622, 392], [566, 424], [548, 476], [536, 600], [372, 600]], pivot: [450, 560] },
+  armR: { poly: [[760, 250], [960, 250], [985, 470], [985, 600], [820, 600], [812, 470], [790, 400], [760, 330]], pivot: [900, 560] },
+};
 const SHIRT = [11, 20, 20]; // fills what a glove hid, so moving a glove never shows a hole
-const GROUND_Y = 1353;
-const PAD = 200; // room above the source picture for hops
 
-async function maskOf(poly) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${N}" height="${N}"><rect width="${N}" height="${N}" fill="#000"/><polygon points="${poly.map((p) => p.join(',')).join(' ')}" fill="#fff"/></svg>`;
-  const { data } = await sharp(Buffer.from(svg)).greyscale().raw().toBuffer({ resolveWithObject: true });
-  return data;
+function inPoly(poly, x, y) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 async function buildParts() {
   const { data: src } = await sharp(SRC).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const M = Object.fromEntries(await Promise.all(Object.entries(POLYS).map(async ([k, p]) => [k, await maskOf(p)])));
-  // Cut regions overlap where a glove touches the face. Keep only what belongs to the part:
-  // gloves and sleeves are neutral dark or teal/white, faces and forearms are orange-brown.
   const skinLike = (i) => src[i] > src[i + 1] + 14 && src[i] > src[i + 2] + 30 && src[i] + src[i + 1] + src[i + 2] > 150;
-  const neutralDark = (i) => Math.abs(src[i] - src[i + 1]) < 18 && Math.abs(src[i + 1] - src[i + 2]) < 22 && src[i] + src[i + 1] + src[i + 2] < 360;
-  const cut = (masks, drop) => {
-    const out = Buffer.alloc(N * N * 4);
-    for (let p = 0; p < N * N; p++) {
-      if (!masks.every((m) => m[p] > 127)) continue;
-      const i = p * 4;
-      if (drop && drop(i, p % N, (p / N) | 0)) continue;
-      out[i] = src[i]; out[i + 1] = src[i + 1]; out[i + 2] = src[i + 2]; out[i + 3] = src[i + 3];
-    }
-    return out;
-  };
-  const png = (buf) => sharp(buf, { raw: { width: N, height: N, channels: 4 } }).png().toBuffer();
+  const parts = { body: Buffer.from(src), legL: Buffer.alloc(N * N * 4), legR: Buffer.alloc(N * N * 4), shinR: Buffer.alloc(N * N * 4), armL: Buffer.alloc(N * N * 4), armR: Buffer.alloc(N * N * 4) };
+  const copy = (dst, i) => { dst[i] = src[i]; dst[i + 1] = src[i + 1]; dst[i + 2] = src[i + 2]; dst[i + 3] = src[i + 3]; };
 
-  // The upper body keeps everything above the hips, but the head and arms are cut out of it. What
-  // sits behind a glove (shoulder, chin) is filled with shirt colour so a moving glove shows no hole.
-  const base = cut([M.upper]);
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const p = y * N + x, i = p * 4;
-    if (M.head[p] > 127) { base[i + 3] = 0; if (y > 345 && x > 625 && x < 775) { base[i] = SHIRT[0]; base[i + 1] = SHIRT[1]; base[i + 2] = SHIRT[2]; base[i + 3] = 255; } }
-    else if (M.armL[p] > 127 && base[i + 3]) { if (x >= 525 && y > 380) { base[i] = SHIRT[0]; base[i + 1] = SHIRT[1]; base[i + 2] = SHIRT[2]; } else base[i + 3] = 0; }
-    else if (M.armR[p] > 127 && base[i + 3]) { if (x <= 812 && y > 360) { base[i] = SHIRT[0]; base[i + 1] = SHIRT[1]; base[i + 2] = SHIRT[2]; } else base[i + 3] = 0; }
+  // legs: below LEG_TOP and outside the shorts (skin that shows through the shorts' outline counts as leg)
+  for (let y = LEG_TOP; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = (y * N + x) * 4;
+    if (!src[i + 3]) continue;
+    if (inPoly(SHORTS, x + 0.5, y + 0.5) && !(y > 820 && skinLike(i))) continue;
+    const leg = x < LEGS.legL.x1 ? parts.legL : parts.legR;
+    copy(leg, i);
+    parts.body[i + 3] = 0;
   }
-  const b64 = async (buf) => 'data:image/png;base64,' + (await png(buf)).toString('base64');
-  return {
-    base: await b64(base),
-    head: await b64(cut([M.head], (i, x, y) => y > 285 && (x < 616 || x > 772) && neutralDark(i))),
-    armL: await b64(cut([M.armL], (i, x, y) => y < 430 && skinLike(i))),
-    armR: await b64(cut([M.armR], (i, x, y) => y < 430 && skinLike(i))),
-    legL: await b64(cut([M.legL])),
-    legR: await b64(cut([M.legR])),
-  };
+  // a hidden thigh: carry each leg column up under the shorts to above the hip, so a raised leg
+  // still meets the body
+  for (const [name, L] of Object.entries(LEGS)) {
+    const leg = parts[name];
+    for (let x = L.x0; x < L.x1; x++) {
+      let top = -1;
+      for (let y = LEG_TOP; y < N; y++) if (leg[(y * N + x) * 4 + 3]) { top = y; break; }
+      if (top < 0 || !inPoly(SHORTS, x + 0.5, top - 2)) continue; // only where the leg disappears into the shorts
+      const from = (Math.min(N - 1, top + 6) * N + x) * 4;
+      for (let y = L.pivot[1] - 50; y < top; y++) {
+        const i = (y * N + x) * 4;
+        leg[i] = leg[from]; leg[i + 1] = leg[from + 1]; leg[i + 2] = leg[from + 2]; leg[i + 3] = 255;
+      }
+    }
+  }
+  // split the right leg at the knee. Both halves keep a round cap around the hinge, so a bent knee
+  // shows neither a gap nor a corner.
+  const nearKnee = (x, y) => Math.hypot(x - KNEE.pivot[0], y - KNEE.pivot[1]) < KNEE.radius;
+  for (let y = LEG_TOP; y < N; y++) for (let x = LEGS.legR.x0; x < LEGS.legR.x1; x++) {
+    const i = (y * N + x) * 4;
+    if (!parts.legR[i + 3]) continue;
+    if (y >= KNEE.y || nearKnee(x, y)) for (let c = 0; c < 4; c++) parts.shinR[i + c] = parts.legR[i + c];
+    if (y >= KNEE.y && !nearKnee(x, y)) parts.legR[i + 3] = 0;
+  }
+  // arms: glove and forearm. What sits behind a glove (shoulder, chin) is filled with shirt colour.
+  for (const [name, A] of Object.entries(ARMS)) {
+    for (let y = 0; y < 640; y++) for (let x = 0; x < N; x++) {
+      if (!inPoly(A.poly, x + 0.5, y + 0.5)) continue;
+      const i = (y * N + x) * 4;
+      if (!src[i + 3]) continue;
+      if (y < 430 && skinLike(i)) continue; // the face next to a glove stays with the body
+      copy(parts[name], i);
+      const behindShirt = name === 'armL' ? x >= 525 && y > 380 : x <= 812 && y > 360;
+      if (behindShirt) { parts.body[i] = SHIRT[0]; parts.body[i + 1] = SHIRT[1]; parts.body[i + 2] = SHIRT[2]; }
+      else parts.body[i + 3] = 0;
+    }
+  }
+  const uri = async (buf) => 'data:image/png;base64,' + (await sharp(buf, { raw: { width: N, height: N, channels: 4 } }).png().toBuffer()).toString('base64');
+  return Object.fromEntries(await Promise.all(Object.entries(parts).map(async ([k, v]) => [k, await uri(v)])));
 }
 
 // ---- posing ----------------------------------------------------------------------------
 
-const T = ({ dx = 0, dy = 0, rot = 0, sx = 1, sy = 1 } = {}, [px, py], pivot) => {
-  const [qx, qy] = pivot ?? [px, py];
-  return `translate(${dx} ${dy}) translate(${qx} ${qy}) rotate(${rot}) scale(${sx} ${sy}) translate(${-qx} ${-qy})`;
-};
-
-const EYES_CLOSED = `
-  <ellipse cx="663" cy="219" rx="29" ry="15" fill="#F08C28"/><ellipse cx="746" cy="231" rx="23" ry="14" fill="#E98320"/>
-  <path d="M 636 218 Q 663 236 690 219" fill="none" stroke="#4A2A08" stroke-width="6" stroke-linecap="round"/>
-  <path d="M 726 231 Q 746 246 766 230" fill="none" stroke="#4A2A08" stroke-width="6" stroke-linecap="round"/>`;
+const T = ({ dx = 0, dy = 0, rot = 0, sx = 1, sy = 1 } = {}, [qx, qy]) =>
+  `translate(${dx} ${dy}) translate(${qx} ${qy}) rotate(${rot}) scale(${sx} ${sy}) translate(${-qx} ${-qy})`;
 
 const mark = (text, x, y, size, fill) => `<text x="${x}" y="${y}" font-family="Arial, Helvetica, sans-serif" font-weight="bold" font-size="${size}" fill="${fill}" stroke="#fff" stroke-width="10" paint-order="stroke" text-anchor="middle">${text}</text>`;
 
+// closed eyelids drawn over the eyes in the picture's own skin tone and outline colour
+const EYES_CLOSED = `
+  <ellipse cx="664" cy="221" rx="40" ry="20" fill="#EC8A2C"/><ellipse cx="746" cy="231" rx="33" ry="18" fill="#E7852A"/>
+  <path d="M 628 222 Q 664 242 700 222" fill="none" stroke="#3A2006" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 716 232 Q 746 250 776 231" fill="none" stroke="#3A2006" stroke-width="7" stroke-linecap="round"/>`;
+
 /**
- * pose: base{dx,dy,rot}, head, armL, armR (relative to the upper body), legL, legR (own hinge),
- * legSy (squash about the ground), g (whole figure about the ground), eyes ('closed'), extra (svg).
+ * pose: legL/legR {rot, sy} about the hip (sy < 1 lifts the foot; legR also takes knee, the shin's bend), armL/armR {dx, dy, rot, s},
+ * lean (degrees, the whole upper body about the hips, kept small), lift (whole figure up, px),
+ * eyes ('closed'), extra (svg on top, frame coordinates of the source).
  */
 function frame(parts, pose = {}) {
-  const { base = {}, head = {}, armL = {}, armR = {}, legL = {}, legR = {}, legSy = 1, g = {}, eyes = 'open', extra = '' } = pose;
-  const leg = (name, o, hinge) => {
-    // A squashed leg scales about its own foot on the ground; its hinge rotation comes first.
-    const pivotGround = [hinge[0], GROUND_Y];
-    return `<g transform="${T({ ...o, sy: o.sy ?? 1 }, hinge)}"><g transform="${T({ sy: legSy }, pivotGround)}"><image href="${parts[name]}" width="${N}" height="${N}"/></g></g>`;
-  };
-  const upper =
-    `<g transform="${T(base, PIV.base)}">` +
-    `<image href="${parts.base}" width="${N}" height="${N}"/>` +
-    `<g transform="${T(head, PIV.head)}"><image href="${parts.head}" width="${N}" height="${N}"/>${eyes === 'closed' ? EYES_CLOSED : ''}</g>` +
-    `<g transform="${T(armL, PIV.armL)}"><image href="${parts.armL}" width="${N}" height="${N}"/></g>` +
-    `<g transform="${T(armR, PIV.armR)}"><image href="${parts.armR}" width="${N}" height="${N}"/></g>` +
-    `</g>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${N}" height="${N + PAD}" viewBox="0 ${-PAD} ${N} ${N + PAD}">` +
-    `<g transform="${T(g, PIV.ground)}">${leg('legL', legL, PIV.legL)}${leg('legR', legR, PIV.legR)}${upper}</g>${extra}</svg>`;
+  const { legL = {}, legR = {}, armL = {}, armR = {}, lean = 0, lift = 0, eyes = 'open', extra = '' } = pose;
+  const shin = (o) => `<g transform="${T({ rot: o.knee ?? 0 }, KNEE.pivot)}"><image href="${parts.shinR}" width="${N}" height="${N}"/></g>`;
+  const leg = (name, o) => `<g transform="${T({ rot: o.rot ?? 0, sy: o.sy ?? 1 }, LEGS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/>${name === 'legR' ? shin(o) : ''}</g>`;
+  const arm = (name, o) => `<g transform="${T({ dx: o.dx, dy: o.dy, rot: o.rot, sx: o.s ?? 1, sy: o.s ?? 1 }, ARMS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/></g>`;
+  // the leg that is drawn in front: a raised leg goes behind the other one
+  const legs = (legR.rot ?? 0) < -20 ? leg('legR', legR) + leg('legL', legL) : leg('legL', legL) + leg('legR', legR);
+  const upper = `<g transform="${T({ rot: lean }, [650, 860])}"><image href="${parts.body}" width="${N}" height="${N}"/>${eyes === 'closed' ? EYES_CLOSED : ''}${arm('armL', armL)}${arm('armR', armR)}</g>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${FW * 2}" height="${FH * 2}" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}">` +
+    `<g transform="translate(0 ${-lift})">${legs}${upper}</g>${extra}</svg>`;
 }
-
-/** Squash legs to `c` of their height: hips drop, so the upper body follows. */
-const crouch = (c) => ({ legSy: c, dy: (1 - c) * (GROUND_Y - 835) });
 
 function buildPoses() {
   const P = {};
-  // idle: breathing in the guard, one blink
-  P.idle = [0, 1, 2, 3].map((k) => ({
-    base: { dy: [0, 10, 16, 6][k], rot: [0, 0.6, 0, -0.6][k] },
-    head: { dy: [0, 3, 4, 1][k] },
-    armL: { rot: [0, -1.5, -2, -1][k] },
-    armR: { rot: [0, 1.5, 2, 1][k] },
-    eyes: k === 2 ? 'closed' : 'open',
-  }));
-  // walk: a boxer's shuffle. The foot that is lifted swings up (left foot clockwise, right foot counter-clockwise).
+  // idle: the picture itself, gloves breathing a little
+  P.idle = [0, 6, 10, 6].map((d, k) => ({ armL: { dy: -d }, armR: { dy: -[6, 10, 6, 0][k] } }));
+  // walk: a boxer's sideways shuffle. One foot at a time lifts (hip turns it out, leg shortens).
   P.walk = [0, 1, 2, 3, 4, 5].map((k) => {
     const s = Math.sin((k * Math.PI) / 3);
+    const l = Math.max(0, s), r = Math.max(0, -s);
     return {
-      base: { dx: 10 * s, dy: -12 * Math.abs(s), rot: 2.5 * s },
-      head: { rot: -2 * s },
-      armL: { rot: 2 * s }, armR: { rot: 2 * s },
-      legL: { rot: 8 * Math.max(0, s) },
-      legR: { rot: -8 * Math.max(0, -s) },
+      legL: { rot: 7 * l, sy: 1 - 0.07 * l },
+      legR: { rot: -7 * r, sy: 1 - 0.07 * r },
+      armL: { dy: -8 * r }, armR: { dy: -8 * l },
     };
   });
-  const c1 = crouch(0.78);
-  P.sit = [0, 1].map((k) => ({ legSy: c1.legSy, base: { dy: c1.dy + [0, 6][k] }, head: { dy: 8, rot: [3, 5][k] }, armL: { dy: 20, rot: -4 }, armR: { dy: 20, rot: 4 } }));
-  const c2 = crouch(0.66);
+  // sit / sleep: guard down
+  P.sit = [0, 1].map((k) => ({ armL: { dy: 60 + 4 * k, rot: -6 }, armR: { dy: 60 + 4 * k, rot: 6 } }));
   P.sleep = [0, 1].map((k) => ({
-    legSy: c2.legSy, base: { dy: c2.dy + [0, 8][k], rot: 6 },
-    head: { dy: 22, rot: 22 + k * 2 },
-    armL: { dy: 50, rot: 12 }, armR: { dy: 50, rot: -12 },
-    eyes: 'closed',
-    extra: mark('z', 1010, 330 - k * 20, 130, '#5B8DEF') + mark('Z', 1110, 200 - k * 30, 190, '#5B8DEF'),
+    armL: { dy: 70, rot: -8 }, armR: { dy: 70, rot: 8 }, eyes: 'closed',
+    extra: mark('z', 1060, 330 - k * 20, 130, '#5B8DEF') + mark('Z', 1160, 200 - k * 30, 190, '#5B8DEF'),
   }));
-  P.watch = [0, 1].map((k) => ({ base: { dx: 20, rot: 3 }, head: { dx: [15, 18][k], rot: [7, 9][k] }, armL: { rot: 2 }, armR: { rot: -2 } }));
   // point: a jab straight at the camera (a glove that grows toward the viewer)
   P.point = [
-    { base: { rot: 2 }, armR: { sx: 1.32, sy: 1.32, dx: 30, dy: -30 } },
-    { base: { rot: -2 }, armL: { sx: 1.32, sy: 1.32, dx: -30, dy: -30 } },
+    { armR: { s: 1.3, dx: -40, dy: -40 } },
+    { armL: { s: 1.3, dx: 40, dy: -40 } },
   ];
-  P.alert = [0, 1].map((k) => ({
-    g: { dy: [-26, -36][k] },
-    head: { rot: [3, -3][k] }, armL: { dy: -25, rot: [8, -8][k] }, armR: { dy: -25, rot: [-8, 8][k] },
-    extra: mark('!', 1040 + k * 10, 250, 300, '#E63946'),
-  }));
-  const c3 = crouch(0.9);
+  P.alert = [0, 1].map((k) => ({ armL: { dy: -20 - 6 * k }, armR: { dy: -26 + 6 * k }, extra: mark('!', 1080 + k * 10, 250, 300, '#E63946') }));
+  // happy: a hop, knees tucked
   P.happy = [
-    { legSy: c3.legSy, base: { dy: c3.dy }, armL: { dy: 10 }, armR: { dy: 10 } },
-    { g: { dy: -85 }, legL: { rot: 6 }, legR: { rot: -6 }, armL: { dy: -70, rot: -6 }, armR: { dy: -70, rot: 6 }, head: { rot: -3 } },
-    { base: { dy: 30 }, armL: { dy: -30 }, armR: { dy: -30 } },
+    { lift: 0 },
+    { lift: 70, legL: { rot: 8, sy: 0.9 }, legR: { rot: -8, sy: 0.9 }, armL: { dy: -40 }, armR: { dy: -40 } },
+    { lift: 100, legL: { rot: 10, sy: 0.88 }, legR: { rot: -10, sy: 0.88 }, armL: { dy: -50 }, armR: { dy: -50 } },
+    { lift: 40, legL: { rot: 4 }, legR: { rot: -4 }, armL: { dy: -20 }, armR: { dy: -20 } },
   ];
-  // drag: dangling in mid-air
-  P.drag = [0, 1].map((k) => ({
-    g: { rot: [5, -5][k] }, legL: { rot: [10, -8][k] }, legR: { rot: [-10, 8][k] },
-    armL: { dy: 50, rot: -10 }, armR: { dy: 50, rot: 10 }, head: { rot: [-4, 4][k] },
-  }));
-  // trick: shadow boxing, jab / bounce / jab / hop
+  // drag: dangling, legs swinging
+  P.drag = [0, 1].map((k) => ({ lift: 20, legL: { rot: [10, -4][k] }, legR: { rot: [4, -10][k] }, armL: { dy: 10 }, armR: { dy: 10 } }));
+  // trick: the high kick. Chamber the knee, snap the leg out to the side up to head height, hold, back.
+  // (he leans away from the kick, the guard stays up, the right glove drops to guard the ribs)
+  const kick = (rot, knee, lean, extra = '') => ({ legR: { rot, knee }, lean, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
+  const HIYA = mark('HI-YA!', 1280, 260, 110, '#E63946');
   P.trick = [
-    { base: { rot: 5 }, head: { rot: -2 }, armL: { sx: 1.4, sy: 1.4, dx: -20, dy: -40 } },
-    { base: { dy: 14 }, head: { dy: 3 } },
-    { base: { rot: -5 }, head: { rot: 2 }, armR: { sx: 1.4, sy: 1.4, dx: 20, dy: -40 } },
-    { g: { dy: -40 }, armL: { dy: -30, rot: -6 }, armR: { dy: -30, rot: 6 } },
+    { armL: { dy: -8 }, armR: { dy: -8 } },
+    kick(-70, 90, -2),
+    kick(-100, 120, -4),
+    kick(-106, 45, -6),
+    kick(-110, 0, -7, HIYA),
+    kick(-110, 0, -7, HIYA),
+    kick(-100, 120, -4),
+    kick(-55, 70, -2),
+    { armL: { dy: -8 }, armR: { dy: -8 } },
   ];
   return P;
+}
+
+/** Soft ground shadow; `k` shrinks it while he is in the air. */
+function shadowSvg(k = 1) {
+  const cx = ((700 - VIEW.x) * FW) / VIEW.w, cy = FH - FEET, rx = 82 * k, ry = 6 * k;
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${FW}" height="${FH}"><defs><filter id="b"><feGaussianBlur stdDeviation="3"/></filter></defs><ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="#000" fill-opacity="${0.28 * k}" filter="url(#b)"/></svg>`);
 }
 
 // ---- main ------------------------------------------------------------------------------
 
 const parts = await buildParts();
 const poses = buildPoses();
-const raw = join(tmpdir(), 'rick-mtv-raw');
-rmSync(raw, { recursive: true, force: true });
-mkdirSync(raw, { recursive: true });
-let count = 0;
+rmSync(OUT, { recursive: true, force: true });
+mkdirSync(OUT, { recursive: true });
+const FPS = { idle: 3, walk: 8, sit: 2, sleep: 1.5, point: 4, alert: 6, happy: 8, drag: 4, trick: 7 };
+const animations = {};
 for (const [anim, list] of Object.entries(poses)) {
+  animations[anim] = { frames: [], fps: FPS[anim] };
   for (let i = 0; i < list.length; i++) {
-    const svg = frame(parts, list[i]);
-    await sharp(Buffer.from(svg)).png().toFile(join(raw, `${anim}-${i + 1}.png`));
-    count++;
+    const sprite = await sharp(Buffer.from(frame(parts, list[i]))).resize(FW, FH, { kernel: 'lanczos3' }).png().toBuffer();
+    const name = `${anim}-${i + 1}.webp`;
+    await sharp({ create: { width: FW, height: FH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: shadowSvg(Math.max(0.5, 1 - (list[i].lift ?? 0) / 200)) }, { input: sprite }])
+      .webp({ quality: 90, alphaQuality: 100 })
+      .toFile(join(OUT, name));
+    animations[anim].frames.push(name);
   }
 }
-writeFileSync(join(raw, 'buddy.meta.json'), JSON.stringify({
+animations.trick.loop = false;
+const manifest = {
+  frameWidth: FW,
+  frameHeight: FH,
+  scale: 0.53,
+  feetOffset: FEET,
   name: 'Rick MTV',
   facing: 'right',
   flip: false,
   petLines: ['Fight and fit!', '*bounces on his toes*', 'Jab, jab, cross!', 'Hit the gym!', 'MTV all day.', '*cracks knuckles*'],
-  doubleClick: { animation: 'trick', seconds: 3.2, say: 'Fight and fit!', effect: { type: 'confetti' } },
-}, null, 2));
-console.log(`rendered ${count} frames to ${raw}`);
-
-const out = join(ROOT, 'buddies', 'rick-mtv');
-const res = await run([raw, '--name', 'Rick MTV', '--id', 'rick-mtv', '--out', out, '--force', '--key', 'none', '--registered',
-  '--size', '208x384', '--display', '190', '--shadow', '--erode', '0', '--format', 'webp', '--quality', '90',
-  '--preview', join(raw, 'preview.png'), '--fps', 'idle=2,walk=9,trick=5,point=4']);
-if (res?.errors) process.exit(1);
-console.log('preview:', join(raw, 'preview.png'));
-void readFileSync;
+  doubleClick: { animation: 'trick', seconds: animations.trick.frames.length / FPS.trick + 0.4, say: 'Hi-ya!', effect: { type: 'confetti' } },
+  animations,
+};
+writeFileSync(join(OUT, 'buddy.json'), JSON.stringify(manifest, null, 2) + '\n');
+console.log(`wrote ${OUT}`);

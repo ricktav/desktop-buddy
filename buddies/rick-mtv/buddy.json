@@ -1,0 +1,106 @@
+{
+  "frameWidth": 364,
+  "frameHeight": 384,
+  "scale": 0.53,
+  "feetOffset": 7,
+  "name": "Rick MTV",
+  "facing": "right",
+  "flip": false,
+  "petLines": [
+    "Fight and fit!",
+    "*bounces on his toes*",
+    "Jab, jab, cross!",
+    "Hit the gym!",
+    "MTV all day.",
+    "*cracks knuckles*"
+  ],
+  "doubleClick": {
+    "animation": "trick",
+    "seconds": 1.685714285714286,
+    "say": "Hi-ya!",
+    "effect": {
+      "type": "confetti"
+    }
+  },
+  "animations": {
+    "idle": {
+      "frames": [
+        "idle-1.webp",
+        "idle-2.webp",
+        "idle-3.webp",
+        "idle-4.webp"
+      ],
+      "fps": 3
+    },
+    "walk": {
+      "frames": [
+        "walk-1.webp",
+        "walk-2.webp",
+        "walk-3.webp",
+        "walk-4.webp",
+        "walk-5.webp",
+        "walk-6.webp"
+      ],
+      "fps": 8
+    },
+    "sit": {
+      "frames": [
+        "sit-1.webp",
+        "sit-2.webp"
+      ],
+      "fps": 2
+    },
+    "sleep": {
+      "frames": [
+        "sleep-1.webp",
+        "sleep-2.webp"
+      ],
+      "fps": 1.5
+    },
+    "point": {
+      "frames": [
+        "point-1.webp",
+        "point-2.webp"
+      ],
+      "fps": 4
+    },
+    "alert": {
+      "frames": [
+        "alert-1.webp",
+        "alert-2.webp"
+      ],
+      "fps": 6
+    },
+    "happy": {
+      "frames": [
+        "happy-1.webp",
+        "happy-2.webp",
+        "happy-3.webp",
+        "happy-4.webp"
+      ],
+      "fps": 8
+    },
+    "drag": {
+      "frames": [
+        "drag-1.webp",
+        "drag-2.webp"
+      ],
+      "fps": 4
+    },
+    "trick": {
+      "frames": [
+        "trick-1.webp",
+        "trick-2.webp",
+        "trick-3.webp",
+        "trick-4.webp",
+        "trick-5.webp",
+        "trick-6.webp",
+        "trick-7.webp",
+        "trick-8.webp",
+        "trick-9.webp"
+      ],
+      "fps": 7,
+      "loop": false
+    }
+  }
+}
