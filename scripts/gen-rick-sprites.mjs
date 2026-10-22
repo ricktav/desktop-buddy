@@ -34,8 +34,6 @@ const LEGS = {
   legL: { x0: 240, x1: 650, pivot: [512, 846] },
   legR: { x0: 650, x1: 1160, pivot: [788, 852] },
 };
-// the right leg (the kicking one) also bends at the knee: the shin hinges here
-const KNEE = { y: 990, radius: 52, pivot: [857, 990] };
 const ARMS = {
   armL: { poly: [[372, 268], [618, 268], [622, 392], [566, 424], [548, 476], [536, 600], [372, 600]], pivot: [450, 560] },
   armR: { poly: [[760, 250], [960, 250], [985, 470], [985, 600], [820, 600], [812, 470], [790, 400], [760, 330]], pivot: [900, 560] },
@@ -54,7 +52,7 @@ function inPoly(poly, x, y) {
 async function buildParts() {
   const { data: src } = await sharp(SRC).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const skinLike = (i) => src[i] > src[i + 1] + 14 && src[i] > src[i + 2] + 30 && src[i] + src[i + 1] + src[i + 2] > 150;
-  const parts = { body: Buffer.from(src), legL: Buffer.alloc(N * N * 4), legR: Buffer.alloc(N * N * 4), shinR: Buffer.alloc(N * N * 4), armL: Buffer.alloc(N * N * 4), armR: Buffer.alloc(N * N * 4) };
+  const parts = { body: Buffer.from(src), legL: Buffer.alloc(N * N * 4), legR: Buffer.alloc(N * N * 4), armL: Buffer.alloc(N * N * 4), armR: Buffer.alloc(N * N * 4) };
   const copy = (dst, i) => { dst[i] = src[i]; dst[i + 1] = src[i + 1]; dst[i + 2] = src[i + 2]; dst[i + 3] = src[i + 3]; };
 
   // legs: below LEG_TOP and outside the shorts (skin that shows through the shorts' outline counts as leg)
@@ -80,15 +78,6 @@ async function buildParts() {
         leg[i] = leg[from]; leg[i + 1] = leg[from + 1]; leg[i + 2] = leg[from + 2]; leg[i + 3] = 255;
       }
     }
-  }
-  // split the right leg at the knee. Both halves keep a round cap around the hinge, so a bent knee
-  // shows neither a gap nor a corner.
-  const nearKnee = (x, y) => Math.hypot(x - KNEE.pivot[0], y - KNEE.pivot[1]) < KNEE.radius;
-  for (let y = LEG_TOP; y < N; y++) for (let x = LEGS.legR.x0; x < LEGS.legR.x1; x++) {
-    const i = (y * N + x) * 4;
-    if (!parts.legR[i + 3]) continue;
-    if (y >= KNEE.y || nearKnee(x, y)) for (let c = 0; c < 4; c++) parts.shinR[i + c] = parts.legR[i + c];
-    if (y >= KNEE.y && !nearKnee(x, y)) parts.legR[i + 3] = 0;
   }
   // arms: glove and forearm. What sits behind a glove (shoulder, chin) is filled with shirt colour.
   for (const [name, A] of Object.entries(ARMS)) {
@@ -121,14 +110,13 @@ const EYES_CLOSED = `
   <path d="M 716 232 Q 746 250 776 231" fill="none" stroke="#3A2006" stroke-width="7" stroke-linecap="round"/>`;
 
 /**
- * pose: legL/legR {rot, sy} about the hip (sy < 1 lifts the foot; legR also takes knee, the shin's bend), armL/armR {dx, dy, rot, s},
+ * pose: legL/legR {rot, sy} about the hip (sy < 1 lifts the foot), armL/armR {dx, dy, rot, s},
  * lean (degrees, the whole upper body about the hips, kept small), lift (whole figure up, px),
  * eyes ('closed'), extra (svg on top, frame coordinates of the source).
  */
 function frame(parts, pose = {}) {
   const { legL = {}, legR = {}, armL = {}, armR = {}, lean = 0, lift = 0, eyes = 'open', extra = '' } = pose;
-  const shin = (o) => `<g transform="${T({ rot: o.knee ?? 0 }, KNEE.pivot)}"><image href="${parts.shinR}" width="${N}" height="${N}"/></g>`;
-  const leg = (name, o) => `<g transform="${T({ rot: o.rot ?? 0, sy: o.sy ?? 1 }, LEGS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/>${name === 'legR' ? shin(o) : ''}</g>`;
+  const leg = (name, o) => `<g transform="${T({ rot: o.rot ?? 0, sy: o.sy ?? 1 }, LEGS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/></g>`;
   const arm = (name, o) => `<g transform="${T({ dx: o.dx, dy: o.dy, rot: o.rot, sx: o.s ?? 1, sy: o.s ?? 1 }, ARMS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/></g>`;
   // the leg that is drawn in front: a raised leg goes behind the other one
   const legs = (legR.rot ?? 0) < -20 ? leg('legR', legR) + leg('legL', legL) : leg('legL', legL) + leg('legR', legR);
@@ -172,19 +160,20 @@ function buildPoses() {
   ];
   // drag: dangling, legs swinging
   P.drag = [0, 1].map((k) => ({ lift: 20, legL: { rot: [10, -4][k] }, legR: { rot: [4, -10][k] }, armL: { dy: 10 }, armR: { dy: 10 } }));
-  // trick: the high kick. Chamber the knee, snap the leg out to the side up to head height, hold, back.
+  // trick: the high kick. The picture shows the leg from the front, where a knee cannot bend, so the
+  // leg swings up straight from the hip to the side, to shoulder height, and back to guard.
   // (he leans away from the kick, the guard stays up, the right glove drops to guard the ribs)
-  const kick = (rot, knee, lean, extra = '') => ({ legR: { rot, knee }, lean, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
+  const kick = (rot, lean, extra = '') => ({ legR: { rot }, lean, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
   const HIYA = mark('HI-YA!', 1280, 260, 110, '#E63946');
   P.trick = [
     { armL: { dy: -8 }, armR: { dy: -8 } },
-    kick(-70, 90, -2),
-    kick(-100, 120, -4),
-    kick(-106, 45, -6),
-    kick(-110, 0, -7, HIYA),
-    kick(-110, 0, -7, HIYA),
-    kick(-100, 120, -4),
-    kick(-55, 70, -2),
+    kick(-30, -2),
+    kick(-68, -4),
+    kick(-98, -6),
+    kick(-112, -7, HIYA),
+    kick(-112, -7, HIYA),
+    kick(-80, -5),
+    kick(-40, -2),
     { armL: { dy: -8 }, armR: { dy: -8 } },
   ];
   return P;
