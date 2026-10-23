@@ -31,8 +31,10 @@ const FEET = Math.round(FH - ((GROUND_Y - VIEW.y) * FH) / VIEW.h); // px from fr
 const SHORTS = [[520, 640], [805, 640], [818, 700], [884, 832], [884, 852], [806, 876], [738, 924], [688, 924], [650, 852], [604, 918], [548, 910], [424, 834], [424, 806], [515, 660]];
 const LEG_TOP = 780;
 const LEGS = {
-  legL: { x0: 240, x1: 650, pivot: [512, 846] },
-  legR: { x0: 650, x1: 1160, pivot: [788, 852] },
+  // thigh: how far the hidden thigh reaches up under the shorts from the hem. The standing leg only
+  // needs a little; the kicking leg needs it all the way up to a rounded hip.
+  legL: { x0: 240, x1: 650, pivot: [512, 846], ankle: [440, 1210], thigh: 40 },
+  legR: { x0: 650, x1: 1160, pivot: [788, 852], ankle: [960, 1265], thigh: Infinity },
 };
 const ARMS = {
   armL: { poly: [[372, 268], [618, 268], [622, 392], [566, 424], [548, 476], [536, 600], [372, 600]], pivot: [450, 560] },
@@ -64,19 +66,45 @@ async function buildParts() {
     copy(leg, i);
     parts.body[i + 3] = 0;
   }
-  // a hidden thigh: carry each leg column up under the shorts to above the hip, so a raised leg
-  // still meets the body
+  // a hidden thigh: carry the leg up under the shorts to above the hip, so a raised leg still meets
+  // the body. It is extended along the leg's own axis (hip to ankle), not straight up: a vertical
+  // extension on a slanted leg reads as a second, backwards bend once the leg swings high.
   for (const [name, L] of Object.entries(LEGS)) {
     const leg = parts[name];
-    for (let x = L.x0; x < L.x1; x++) {
+    const [px, py] = L.pivot;
+    const len = Math.hypot(L.ankle[0] - px, L.ankle[1] - py);
+    const ux = (L.ankle[0] - px) / len, uy = (L.ankle[1] - py) / len;
+    const at = (u, v) => [Math.round(px + u * ux - v * uy), Math.round(py + u * uy + v * ux)];
+    const idx = ([x, y]) => (x >= 0 && x < N && y >= 0 && y < N ? (y * N + x) * 4 : -1);
+    // per line along the axis (v, half-pixel steps): where the leg comes out of the shorts, and a
+    // skin colour from solid thigh below the hem's shadow, smoothed across lines so it shades evenly
+    const V = 150, lines = [];
+    for (let v = -V; v <= V; v += 0.5) {
       let top = -1;
-      for (let y = LEG_TOP; y < N; y++) if (leg[(y * N + x) * 4 + 3]) { top = y; break; }
-      if (top < 0 || !inPoly(SHORTS, x + 0.5, top - 2)) continue; // only where the leg disappears into the shorts
-      const from = (Math.min(N - 1, top + 6) * N + x) * 4;
-      for (let y = L.pivot[1] - 50; y < top; y++) {
-        const i = (y * N + x) * 4;
-        leg[i] = leg[from]; leg[i + 1] = leg[from + 1]; leg[i + 2] = leg[from + 2]; leg[i + 3] = 255;
-      }
+      for (let u = 0; u < 400; u += 0.5) { const i = idx(at(u, v)); if (i >= 0 && leg[i + 3]) { top = u; break; } }
+      const [tx, ty] = top < 0 ? [0, 0] : at(top - 2, v);
+      if (top < 0 || !inPoly(SHORTS, tx + 0.5, ty + 0.5)) { lines.push(null); continue; } // only where the leg disappears into the shorts
+      const c = [0, 0, 0]; let n = 0;
+      for (let k = 18; k < 40; k++) { const i = idx(at(top + k, v)); if (i >= 0 && leg[i + 3] === 255 && skinLike(i)) { c[0] += src[i]; c[1] += src[i + 1]; c[2] += src[i + 2]; n++; } }
+      lines.push(n ? { top, c: c.map((t) => t / n) } : null);
+    }
+    const smooth = lines.map((l, j) => {
+      if (!l) return null;
+      const c = [0, 0, 0]; let n = 0;
+      for (let d = -12; d <= 12; d++) { const m = lines[j + d]; if (m) { c[0] += m.c[0]; c[1] += m.c[1]; c[2] += m.c[2]; n++; } }
+      return { top: l.top, c: c.map((t) => Math.round(t / n)) };
+    });
+    // fill (inverse-mapped, so no gaps) from the hip down past the hem's shadow band. Above the
+    // hip the thigh ends in a rounded cap, so when it swings out it reads as a hip, not a cut-off tube.
+    const used = smooth.flatMap((l, j) => (l ? [j / 2 - V] : []));
+    const vc = (used[0] + used[used.length - 1]) / 2, R = (used[used.length - 1] - used[0]) / 2;
+    for (let y = py - 120; y < py + 160; y++) for (let x = px - 220; x < px + 220; x++) {
+      const dx = x - px, dy = y - py, u = dx * ux + dy * uy, v = -dx * uy + dy * ux;
+      const l = smooth[Math.round((v + V) * 2)];
+      if (!l || u >= l.top + 12 || u < l.top - L.thigh) continue;
+      if (u < 0 && u < -0.6 * Math.sqrt(Math.max(0, R * R - (v - vc) ** 2))) continue;
+      const i = (y * N + x) * 4;
+      leg[i] = l.c[0]; leg[i + 1] = l.c[1]; leg[i + 2] = l.c[2]; leg[i + 3] = 255;
     }
   }
   // arms: glove and forearm. What sits behind a glove (shoulder, chin) is filled with shirt colour.
@@ -162,18 +190,19 @@ function buildPoses() {
   P.drag = [0, 1].map((k) => ({ lift: 20, legL: { rot: [10, -4][k] }, legR: { rot: [4, -10][k] }, armL: { dy: 10 }, armR: { dy: 10 } }));
   // trick: the high kick. The picture shows the leg from the front, where a knee cannot bend, so the
   // leg swings up straight from the hip to the side, to shoulder height, and back to guard.
-  // (he leans away from the kick, the guard stays up, the right glove drops to guard the ribs)
+  // (he leans away from the kick like a real side kick, the guard stays up, the right glove drops
+  // to guard the ribs)
   const kick = (rot, lean, extra = '') => ({ legR: { rot }, lean, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
   const HIYA = mark('HI-YA!', 1280, 260, 110, '#E63946');
   P.trick = [
     { armL: { dy: -8 }, armR: { dy: -8 } },
-    kick(-30, -2),
-    kick(-68, -4),
-    kick(-98, -6),
-    kick(-112, -7, HIYA),
-    kick(-112, -7, HIYA),
-    kick(-80, -5),
-    kick(-40, -2),
+    kick(-28, -3),
+    kick(-62, -8),
+    kick(-88, -12),
+    kick(-100, -14, HIYA),
+    kick(-100, -14, HIYA),
+    kick(-70, -9),
+    kick(-34, -4),
     { armL: { dy: -8 }, armR: { dy: -8 } },
   ];
   return P;
