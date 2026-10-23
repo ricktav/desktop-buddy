@@ -4,8 +4,8 @@
 // The picture stays exactly as drawn: head, face, shirt and shorts never move, tilt or squash.
 // Only the legs (cut out below the shorts and hinged at the hip) and the gloves move. The legs get
 // a hidden thigh under the shorts, so a leg raised high still joins the hip. Double-click does a
-// high kick from the hip joint, and for that one move the right leg of the shorts lifts with the
-// thigh.
+// roundhouse kick: for that one move the right leg is jointed at hip, knee and ankle, and the right
+// leg of the shorts lifts with the thigh.
 //
 // The figure faces the camera and has writing on its shirt, so the pack sets `flip: false`: it is
 // never mirrored and shuffles sideways like a boxer.
@@ -49,6 +49,10 @@ const HIP_R = [770, 790];
 const KICK_SHORTS = [[652, 850], [676, 790], [760, 760], [890, 760], [905, 860], [820, 900], [740, 935], [690, 935]];
 const SHORTS_FILL = [17, 21, 21];
 const SHORTS_FOLLOW = 1; // how much of the leg's swing the shorts leg takes
+// For the kick the right leg is cut into thigh, shin and foot, jointed at the knee and the ankle.
+// Each piece keeps a rounded end of radius R around its joint, so a bent knee or ankle stays closed.
+const KNEE_R = [875, 995], ANKLE_R = [990, 1268];
+const KNEE_RAD = 58, ANKLE_RAD = 38;
 
 function inPoly(poly, x, y) {
   let inside = false;
@@ -139,6 +143,25 @@ async function buildParts() {
     if (d < 62) { parts.bodyK[i] = SHORTS_FILL[0]; parts.bodyK[i + 1] = SHORTS_FILL[1]; parts.bodyK[i + 2] = SHORTS_FILL[2]; }
     else parts.bodyK[i + 3] = 0;
   }
+  // thigh, shin and foot of the kicking leg, split across the shin's axis at the knee and the ankle
+  parts.thighR = Buffer.alloc(N * N * 4);
+  parts.shinR = Buffer.alloc(N * N * 4);
+  parts.footR = Buffer.alloc(N * N * 4);
+  {
+    const len = Math.hypot(ANKLE_R[0] - KNEE_R[0], ANKLE_R[1] - KNEE_R[1]);
+    const sx = (ANKLE_R[0] - KNEE_R[0]) / len, sy = (ANKLE_R[1] - KNEE_R[1]) / len;
+    const leg = parts.legR;
+    const put = (dst, i) => { dst[i] = leg[i]; dst[i + 1] = leg[i + 1]; dst[i + 2] = leg[i + 2]; dst[i + 3] = leg[i + 3]; };
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const i = (y * N + x) * 4;
+      if (!leg[i + 3]) continue;
+      const k = (x - KNEE_R[0]) * sx + (y - KNEE_R[1]) * sy, a = (x - ANKLE_R[0]) * sx + (y - ANKLE_R[1]) * sy;
+      const nearKnee = Math.hypot(x - KNEE_R[0], y - KNEE_R[1]) < KNEE_RAD, nearAnkle = Math.hypot(x - ANKLE_R[0], y - ANKLE_R[1]) < ANKLE_RAD;
+      if (k < 0 || nearKnee) put(parts.thighR, i);
+      if ((k >= 0 || nearKnee) && (a < 0 || nearAnkle)) put(parts.shinR, i);
+      if (a >= 0 || nearAnkle) put(parts.footR, i);
+    }
+  }
   const uri = async (buf) => 'data:image/png;base64,' + (await sharp(buf, { raw: { width: N, height: N, channels: 4 } }).png().toBuffer()).toString('base64');
   return Object.fromEntries(await Promise.all(Object.entries(parts).map(async ([k, v]) => [k, await uri(v)])));
 }
@@ -159,8 +182,9 @@ const EYES_CLOSED = `
 /**
  * pose: legL/legR {rot, sy} about the hip (sy < 1 lifts the foot), armL/armR {dx, dy, rot, s},
  * lean (degrees, the whole upper body about the hips, kept small), lift (whole figure up, px),
- * eyes ('closed'), extra (svg on top, frame coordinates of the source), kick {rot}: the right leg and
- * the right leg of the shorts swing together about the hip (it replaces legR).
+ * eyes ('closed'), extra (svg on top, frame coordinates of the source), kick {hip, knee, ankle}: the
+ * right leg as thigh, shin and foot, each angle relative to the piece above it; the right leg of the
+ * shorts swings with the thigh (it replaces legR).
  */
 function frame(parts, pose = {}) {
   const { legL = {}, legR = {}, armL = {}, armR = {}, lean = 0, lift = 0, eyes = 'open', extra = '', kick } = pose;
@@ -168,9 +192,12 @@ function frame(parts, pose = {}) {
   const arm = (name, o) => `<g transform="${T({ dx: o.dx, dy: o.dy, rot: o.rot, sx: o.s ?? 1, sy: o.s ?? 1 }, ARMS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/></g>`;
   // the leg that is drawn in front: a raised leg goes behind the other one
   const legs = kick ? leg('legL', legL) : leg('legL', legL) + leg('legR', legR);
+  const img = (name) => `<image href="${parts[name]}" width="${N}" height="${N}"/>`;
+  // foot under shin under thigh, so the rounded joint ends overlap the right way
   const kicking = kick
-    ? `<g transform="${T({ rot: kick.rot }, HIP_R)}"><image href="${parts.legR}" width="${N}" height="${N}"/></g>` +
-      `<g transform="${T({ rot: kick.rot * SHORTS_FOLLOW }, HIP_R)}"><image href="${parts.kickShorts}" width="${N}" height="${N}"/></g>`
+    ? `<g transform="${T({ rot: kick.hip ?? 0 }, HIP_R)}">` +
+        `<g transform="${T({ rot: kick.knee ?? 0 }, KNEE_R)}"><g transform="${T({ rot: kick.ankle ?? 0 }, ANKLE_R)}">${img('footR')}</g>${img('shinR')}</g>${img('thighR')}` +
+      `</g><g transform="${T({ rot: (kick.hip ?? 0) * SHORTS_FOLLOW }, HIP_R)}">${img('kickShorts')}</g>`
     : '';
   const upper = `<g transform="${T({ rot: lean }, [650, 860])}"><image href="${kick ? parts.bodyK : parts.body}" width="${N}" height="${N}"/>${kicking}${eyes === 'closed' ? EYES_CLOSED : ''}${arm('armL', armL)}${arm('armR', armR)}</g>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${FW * 2}" height="${FH * 2}" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}">` +
@@ -212,22 +239,28 @@ function buildPoses() {
   ];
   // drag: dangling, legs swinging
   P.drag = [0, 1].map((k) => ({ lift: 20, legL: { rot: [10, -4][k] }, legR: { rot: [4, -10][k] }, armL: { dy: 10 }, armR: { dy: 10 } }));
-  // trick: the high kick. The picture shows the leg from the front, where a knee cannot bend, so the
-  // leg swings up straight from the hip joint (shorts and all) to the side, and back to guard.
-  // (he leans away from the kick like a real side kick, the guard stays up, the right glove drops
-  // to guard the ribs)
-  const kick = (rot, lean, extra = '') => ({ kick: { rot }, lean, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
+  // trick: a roundhouse kick, in the order a kicker moves. The hip turns (he leans away) and the knee
+  // comes up first with the shin still folded under it (the chamber); then the shin snaps out with
+  // the foot pointed, so shin and instep make one straight line; then the shin folds back in and the
+  // leg comes down. Angles: hip is the thigh about the hip joint, knee the shin relative to the
+  // thigh (positive folds it), ankle the foot relative to the shin (positive points the toes).
+  // (the guard stays up, the right glove drops to guard the ribs)
+  const kick = (hip, knee, ankle, lean, extra = '') => ({ kick: { hip, knee, ankle }, lean, legL: { rot: lean * 0.3 }, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
   const HIYA = mark('HI-YA!', 1310, 130, 110, '#E63946');
+  const guard = { kick: {}, armL: { dy: -8 }, armR: { dy: -8 } };
   P.trick = [
-    { kick: { rot: 0 }, armL: { dy: -8 }, armR: { dy: -8 } },
-    kick(-28, -3),
-    kick(-62, -8),
-    kick(-88, -12),
-    kick(-100, -14, HIYA),
-    kick(-100, -14, HIYA),
-    kick(-70, -9),
-    kick(-34, -4),
-    { kick: { rot: 0 }, armL: { dy: -8 }, armR: { dy: -8 } },
+    guard,
+    kick(-25, 45, 5, -3), //       knee starts up, shin hangs back
+    kick(-55, 90, 10, -7), //      knee rising, shin folded under
+    kick(-80, 112, 14, -11), //    chamber: thigh level, shin hanging, toes pointed
+    kick(-86, 60, 18, -14), //     snap
+    kick(-88, 8, 22, -16, HIYA), // full extension, shin and foot in line
+    kick(-88, 0, 22, -16, HIYA),
+    kick(-88, 4, 22, -16, HIYA),
+    kick(-80, 105, 14, -11), //    re-chamber
+    kick(-45, 75, 8, -5), //       knee coming down
+    kick(-15, 20, 2, -2),
+    guard,
   ];
   return P;
 }
@@ -244,7 +277,7 @@ const parts = await buildParts();
 const poses = buildPoses();
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
-const FPS = { idle: 3, walk: 8, sit: 2, sleep: 1.5, point: 4, alert: 6, happy: 8, drag: 4, trick: 7 };
+const FPS = { idle: 3, walk: 8, sit: 2, sleep: 1.5, point: 4, alert: 6, happy: 8, drag: 4, trick: 9 };
 const animations = {};
 for (const [anim, list] of Object.entries(poses)) {
   animations[anim] = { frames: [], fps: FPS[anim] };

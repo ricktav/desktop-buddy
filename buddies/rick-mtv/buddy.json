@@ -16,7 +16,7 @@
   ],
   "doubleClick": {
     "animation": "trick",
-    "seconds": 1.685714285714286,
+    "seconds": 1.7333333333333334,
     "say": "Hi-ya!",
     "effect": {
       "type": "confetti"
@@ -97,9 +97,12 @@
         "trick-6.webp",
         "trick-7.webp",
         "trick-8.webp",
-        "trick-9.webp"
+        "trick-9.webp",
+        "trick-10.webp",
+        "trick-11.webp",
+        "trick-12.webp"
       ],
-      "fps": 7,
+      "fps": 9,
       "loop": false
     }
   }
