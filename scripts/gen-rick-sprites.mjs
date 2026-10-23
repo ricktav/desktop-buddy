@@ -4,7 +4,8 @@
 // The picture stays exactly as drawn: head, face, shirt and shorts never move, tilt or squash.
 // Only the legs (cut out below the shorts and hinged at the hip) and the gloves move. The legs get
 // a hidden thigh under the shorts, so a leg raised high still joins the hip. Double-click does a
-// high kick.
+// high kick from the hip joint, and for that one move the right leg of the shorts lifts with the
+// thigh.
 //
 // The figure faces the camera and has writing on its shirt, so the pack sets `flip: false`: it is
 // never mirrored and shuffles sideways like a boxer.
@@ -41,6 +42,13 @@ const ARMS = {
   armR: { poly: [[760, 250], [960, 250], [985, 470], [985, 600], [820, 600], [812, 470], [790, 400], [760, 330]], pivot: [900, 560] },
 };
 const SHIRT = [11, 20, 20]; // fills what a glove hid, so moving a glove never shows a hole
+// The kick swings the right leg from the real hip joint, high inside the shorts, and the right leg
+// of the shorts lifts part of the way with it, as loose fight shorts do. What the shorts uncover at
+// the hip is filled with shorts colour.
+const HIP_R = [770, 790];
+const KICK_SHORTS = [[652, 850], [676, 790], [760, 760], [890, 760], [905, 860], [820, 900], [740, 935], [690, 935]];
+const SHORTS_FILL = [17, 21, 21];
+const SHORTS_FOLLOW = 1; // how much of the leg's swing the shorts leg takes
 
 function inPoly(poly, x, y) {
   let inside = false;
@@ -120,6 +128,17 @@ async function buildParts() {
       else parts.body[i + 3] = 0;
     }
   }
+  // the kick: the right leg of the shorts as its own part, and the body without it
+  parts.kickShorts = Buffer.alloc(N * N * 4);
+  parts.bodyK = Buffer.from(parts.body);
+  for (let y = 700; y < 960; y++) for (let x = 600; x < 960; x++) {
+    const i = (y * N + x) * 4;
+    if (!parts.body[i + 3] || !inPoly(KICK_SHORTS, x + 0.5, y + 0.5)) continue;
+    copy(parts.kickShorts, i);
+    const d = Math.hypot(x - HIP_R[0], y - HIP_R[1]);
+    if (d < 62) { parts.bodyK[i] = SHORTS_FILL[0]; parts.bodyK[i + 1] = SHORTS_FILL[1]; parts.bodyK[i + 2] = SHORTS_FILL[2]; }
+    else parts.bodyK[i + 3] = 0;
+  }
   const uri = async (buf) => 'data:image/png;base64,' + (await sharp(buf, { raw: { width: N, height: N, channels: 4 } }).png().toBuffer()).toString('base64');
   return Object.fromEntries(await Promise.all(Object.entries(parts).map(async ([k, v]) => [k, await uri(v)])));
 }
@@ -140,15 +159,20 @@ const EYES_CLOSED = `
 /**
  * pose: legL/legR {rot, sy} about the hip (sy < 1 lifts the foot), armL/armR {dx, dy, rot, s},
  * lean (degrees, the whole upper body about the hips, kept small), lift (whole figure up, px),
- * eyes ('closed'), extra (svg on top, frame coordinates of the source).
+ * eyes ('closed'), extra (svg on top, frame coordinates of the source), kick {rot}: the right leg and
+ * the right leg of the shorts swing together about the hip (it replaces legR).
  */
 function frame(parts, pose = {}) {
-  const { legL = {}, legR = {}, armL = {}, armR = {}, lean = 0, lift = 0, eyes = 'open', extra = '' } = pose;
+  const { legL = {}, legR = {}, armL = {}, armR = {}, lean = 0, lift = 0, eyes = 'open', extra = '', kick } = pose;
   const leg = (name, o) => `<g transform="${T({ rot: o.rot ?? 0, sy: o.sy ?? 1 }, LEGS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/></g>`;
   const arm = (name, o) => `<g transform="${T({ dx: o.dx, dy: o.dy, rot: o.rot, sx: o.s ?? 1, sy: o.s ?? 1 }, ARMS[name].pivot)}"><image href="${parts[name]}" width="${N}" height="${N}"/></g>`;
   // the leg that is drawn in front: a raised leg goes behind the other one
-  const legs = (legR.rot ?? 0) < -20 ? leg('legR', legR) + leg('legL', legL) : leg('legL', legL) + leg('legR', legR);
-  const upper = `<g transform="${T({ rot: lean }, [650, 860])}"><image href="${parts.body}" width="${N}" height="${N}"/>${eyes === 'closed' ? EYES_CLOSED : ''}${arm('armL', armL)}${arm('armR', armR)}</g>`;
+  const legs = kick ? leg('legL', legL) : leg('legL', legL) + leg('legR', legR);
+  const kicking = kick
+    ? `<g transform="${T({ rot: kick.rot }, HIP_R)}"><image href="${parts.legR}" width="${N}" height="${N}"/></g>` +
+      `<g transform="${T({ rot: kick.rot * SHORTS_FOLLOW }, HIP_R)}"><image href="${parts.kickShorts}" width="${N}" height="${N}"/></g>`
+    : '';
+  const upper = `<g transform="${T({ rot: lean }, [650, 860])}"><image href="${kick ? parts.bodyK : parts.body}" width="${N}" height="${N}"/>${kicking}${eyes === 'closed' ? EYES_CLOSED : ''}${arm('armL', armL)}${arm('armR', armR)}</g>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${FW * 2}" height="${FH * 2}" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}">` +
     `<g transform="translate(0 ${-lift})">${legs}${upper}</g>${extra}</svg>`;
 }
@@ -189,13 +213,13 @@ function buildPoses() {
   // drag: dangling, legs swinging
   P.drag = [0, 1].map((k) => ({ lift: 20, legL: { rot: [10, -4][k] }, legR: { rot: [4, -10][k] }, armL: { dy: 10 }, armR: { dy: 10 } }));
   // trick: the high kick. The picture shows the leg from the front, where a knee cannot bend, so the
-  // leg swings up straight from the hip to the side, to shoulder height, and back to guard.
+  // leg swings up straight from the hip joint (shorts and all) to the side, and back to guard.
   // (he leans away from the kick like a real side kick, the guard stays up, the right glove drops
   // to guard the ribs)
-  const kick = (rot, lean, extra = '') => ({ legR: { rot }, lean, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
-  const HIYA = mark('HI-YA!', 1280, 260, 110, '#E63946');
+  const kick = (rot, lean, extra = '') => ({ kick: { rot }, lean, armL: { dy: -12 }, armR: { dy: 24, rot: 10 }, extra });
+  const HIYA = mark('HI-YA!', 1310, 130, 110, '#E63946');
   P.trick = [
-    { armL: { dy: -8 }, armR: { dy: -8 } },
+    { kick: { rot: 0 }, armL: { dy: -8 }, armR: { dy: -8 } },
     kick(-28, -3),
     kick(-62, -8),
     kick(-88, -12),
@@ -203,7 +227,7 @@ function buildPoses() {
     kick(-100, -14, HIYA),
     kick(-70, -9),
     kick(-34, -4),
-    { armL: { dy: -8 }, armR: { dy: -8 } },
+    { kick: { rot: 0 }, armL: { dy: -8 }, armR: { dy: -8 } },
   ];
   return P;
 }
